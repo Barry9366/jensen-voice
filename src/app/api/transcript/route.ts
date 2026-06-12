@@ -98,54 +98,81 @@ async function processTranscriptWithTranslation(rawTranscript: any[], isAiGenera
   };
 }
 
-// AI Whisper Fallback logic
+// AI Gemini Fallback logic
 async function generateTranscriptWithAI(videoId: string) {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error("Missing OPENAI_API_KEY for AI subtitle generation");
+    throw new Error("Missing GEMINI_API_KEY for AI subtitle generation");
   }
+
+  const { GoogleGenerativeAI } = require("@google/generative-ai");
+  const { GoogleAIFileManager } = require("@google/generative-ai/server");
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const fileManager = new GoogleAIFileManager(apiKey);
 
   return new Promise<any[]>((resolve, reject) => {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
     const audioStream = ytdl(url, { filter: "audioonly", quality: "highestaudio" });
 
-    const chunks: Buffer[] = [];
-    audioStream.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+    const tempFilePath = path.join(CACHE_DIR, `${videoId}_temp.webm`);
+    const writeStream = fs.createWriteStream(tempFilePath);
+    audioStream.pipe(writeStream);
+
     audioStream.on("error", (err) => reject(new Error("ytdl-core error: " + err.message)));
 
-    audioStream.on("end", async () => {
+    writeStream.on("finish", async () => {
       try {
-        const audioBuffer = Buffer.concat(chunks);
-        const fileBlob = new Blob([audioBuffer], { type: "audio/webm" });
-
-        const formData = new FormData();
-        formData.append("file", fileBlob, "audio.webm");
-        formData.append("model", "whisper-1");
-        formData.append("response_format", "verbose_json");
-        formData.append("timestamp_granularities[]", "segment");
-
-        const aiResponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-          method: "POST",
-          headers: { "Authorization": `Bearer ${apiKey}` },
-          body: formData,
+        const uploadResponse = await fileManager.uploadFile(tempFilePath, {
+          mimeType: "audio/webm",
+          displayName: `Audio ${videoId}`,
         });
 
-        if (!aiResponse.ok) {
-          const errText = await aiResponse.text();
-          throw new Error("OpenAI API error: " + errText);
-        }
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const prompt = `You are a professional transcriptionist. Listen to the audio and provide a complete transcript. 
+You MUST output ONLY a valid JSON array of objects. Do not wrap it in markdown code blocks.
+Each object must have exactly these three fields:
+- text: The spoken sentence (string)
+- offset: The start time of the sentence in milliseconds (integer)
+- duration: The duration of the sentence in milliseconds (integer)
 
-        const data = await aiResponse.json();
-        if (!data.segments) throw new Error("No segments returned from Whisper API");
+Example output:
+[
+  {"text": "Hello world.", "offset": 0, "duration": 1500},
+  {"text": "Welcome to the video.", "offset": 1500, "duration": 2000}
+]`;
 
-        const rawTranscript = data.segments.map((seg: any) => ({
-          text: seg.text.trim(),
-          offset: Math.floor(seg.start * 1000),
-          duration: Math.floor((seg.end - seg.start) * 1000),
+        const result = await model.generateContent([
+          {
+            fileData: {
+              mimeType: uploadResponse.file.mimeType,
+              fileUri: uploadResponse.file.uri
+            }
+          },
+          { text: prompt },
+        ]);
+
+        const responseText = result.response.text();
+        const cleanText = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
+        
+        const data = JSON.parse(cleanText);
+        if (!Array.isArray(data)) throw new Error("Gemini did not return an array");
+
+        const rawTranscript = data.map((seg: any) => ({
+          text: String(seg.text).trim(),
+          offset: Number(seg.offset),
+          duration: Number(seg.duration),
         }));
+
+        if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+        
+        try {
+           await fileManager.deleteFile(uploadResponse.file.name);
+        } catch (e) {}
 
         resolve(rawTranscript);
       } catch (err) {
+        if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
         reject(err);
       }
     });
