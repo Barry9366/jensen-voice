@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import ytdl from "@distube/ytdl-core";
 import fs from "fs";
 import path from "path";
+import os from "os";
 
 export const maxDuration = 60; // Set Vercel function timeout to 60s
 
@@ -13,8 +14,8 @@ export interface TranscriptItem {
   zh: string;      // Chinese translation
 }
 
-// Ensure cache directory exists
-const CACHE_DIR = path.join(process.cwd(), ".cache", "transcripts");
+// Ensure cache directory exists (use /tmp for serverless compatibility)
+const CACHE_DIR = path.join(os.tmpdir(), "jensen_voice_transcripts");
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
 }
