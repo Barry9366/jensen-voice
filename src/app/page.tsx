@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Terminal, Cpu, Sparkles, BookOpen, Repeat, X, RefreshCw } from "lucide-react";
+import { Terminal, Cpu, Sparkles, BookOpen, Repeat, X, RefreshCw, Settings } from "lucide-react";
 import VideoPlayer, { LoopRange } from "@/components/VideoPlayer";
 import BilingualTranscript, { TranscriptItem } from "@/components/BilingualTranscript";
 import RecordingSlots from "@/components/RecordingSlots";
@@ -31,6 +31,21 @@ export default function Home() {
   const [transcriptError, setTranscriptError] = useState("");
   const [isAiGenerated, setIsAiGenerated] = useState(false);
 
+  // BYOK Settings state
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [userApiKey, setUserApiKey] = useState("");
+
+  useEffect(() => {
+    const savedKey = localStorage.getItem("jensen_voice_gemini_key");
+    if (savedKey) setUserApiKey(savedKey);
+  }, []);
+
+  const handleSaveApiKey = (key: string) => {
+    setUserApiKey(key);
+    localStorage.setItem("jensen_voice_gemini_key", key);
+    setIsSettingsOpen(false);
+  };
+
   // Loop / sentence repeat state
   const [loopRange, setLoopRange] = useState<LoopRange | null>(null);
   const [loopItemIndex, setLoopItemIndex] = useState<number | null>(null);
@@ -54,7 +69,11 @@ export default function Home() {
     setRepeatCount(0);
     setIsLoadingTranscript(true);
 
-    fetch(`/api/transcript?videoId=${videoId}`)
+    fetch(`/api/transcript?videoId=${videoId}`, {
+      headers: {
+        "x-gemini-api-key": userApiKey
+      }
+    })
       .then((res) => res.json())
       .then((data) => {
         if (data.error) {
@@ -68,7 +87,7 @@ export default function Home() {
       })
       .catch(() => setTranscriptError("網路錯誤，無法取得字幕"))
       .finally(() => setIsLoadingTranscript(false));
-  }, [videoId]);
+  }, [videoId, userApiKey]);
 
   // Auto-fetch when videoId changes
   useEffect(() => {
@@ -154,6 +173,13 @@ export default function Home() {
               <Terminal className="w-3.5 h-3.5 text-nvidia-neon" />
               <span>LIVE</span>
             </div>
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="p-2 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-nvidia/50 rounded-lg text-slate-400 hover:text-nvidia transition-colors"
+              title="設定 API 金鑰"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </header>
@@ -269,6 +295,55 @@ export default function Home() {
             <button onClick={handleClearLoop} className="shrink-0 flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-red-500/50 text-slate-400 hover:text-red-400 text-xs font-bold rounded-xl transition-all cursor-pointer">
               <X className="w-3.5 h-3.5" />停止練習
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Settings Modal ── */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+              <h3 className="font-bold text-slate-200 flex items-center gap-2">
+                <Settings className="w-4 h-4 text-nvidia" />
+                設定 Gemini API 金鑰
+              </h3>
+              <button onClick={() => setIsSettingsOpen(false)} className="text-slate-500 hover:text-slate-300">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-400">
+                為了在雲端順利呼叫 AI 產生字幕，請輸入您個人的 Gemini API Key。這把金鑰只會保存在您的瀏覽器中，不會傳送到第三方伺服器。
+              </p>
+              <div>
+                <label className="block text-xs font-mono text-slate-500 mb-1">GEMINI API KEY</label>
+                <input
+                  type="password"
+                  placeholder="AIzaSy..."
+                  defaultValue={userApiKey}
+                  id="geminiKeyInput"
+                  className="w-full bg-slate-950 border border-slate-800 focus:border-nvidia rounded-xl px-4 py-3 text-sm text-slate-200 outline-none transition-colors"
+                />
+              </div>
+            </div>
+            <div className="p-4 border-t border-slate-800 bg-slate-950/50 flex justify-end gap-3">
+              <button
+                onClick={() => setIsSettingsOpen(false)}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-slate-200 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  const input = document.getElementById("geminiKeyInput") as HTMLInputElement;
+                  handleSaveApiKey(input?.value || "");
+                }}
+                className="px-4 py-2 rounded-xl text-sm font-bold bg-nvidia text-black hover:bg-emerald-400 transition-colors"
+              >
+                儲存設定
+              </button>
+            </div>
           </div>
         </div>
       )}

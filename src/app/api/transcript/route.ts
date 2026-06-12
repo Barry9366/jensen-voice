@@ -99,8 +99,8 @@ async function processTranscriptWithTranslation(rawTranscript: any[], isAiGenera
 }
 
 // AI Gemini Fallback logic
-async function generateTranscriptWithAI(videoId: string) {
-  const apiKey = process.env.GEMINI_API_KEY;
+async function generateTranscriptWithAI(videoId: string, userApiKey: string | null) {
+  const apiKey = userApiKey || process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("Missing GEMINI_API_KEY for AI subtitle generation");
   }
@@ -182,6 +182,7 @@ Example output:
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const videoId = searchParams.get("videoId");
+  const userApiKey = request.headers.get("x-gemini-api-key");
 
   if (!videoId || videoId.length !== 11) {
     return NextResponse.json({ error: "invalid_video_id", message: "請提供有效的 YouTube 影片 ID" }, { status: 400 });
@@ -213,7 +214,7 @@ export async function GET(request: Request) {
   } catch {
     // YouTube CC failed -> Fallback to Whisper AI
     try {
-      rawTranscript = await generateTranscriptWithAI(videoId);
+      rawTranscript = await generateTranscriptWithAI(videoId, userApiKey);
       isAiGenerated = true;
     } catch (err: any) {
       console.error("AI Generation failed:", err);
