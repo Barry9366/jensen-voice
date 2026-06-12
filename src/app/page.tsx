@@ -40,22 +40,19 @@ export default function Home() {
   // Video seeking state
   const [seekTime, setSeekTime] = useState<number | null>(null);
 
-  // Fetch transcript when videoId changes
-  useEffect(() => {
+  // Fetch transcript logic
+  const fetchTranscript = useCallback(() => {
     if (!videoId) return;
 
-    // Reset states asynchronously to avoid ESLint cascading render error
-    const resetTimer = setTimeout(() => {
-      setAutoTranscript([]);
-      setTranscriptError("");
-      setIsAiGenerated(false);
-      setCurrentTime(0);
-      setLoopRange(null);
-      setLoopItemIndex(null);
-      setLoopItem(null);
-      setRepeatCount(0);
-      setIsLoadingTranscript(true);
-    }, 0);
+    setAutoTranscript([]);
+    setTranscriptError("");
+    setIsAiGenerated(false);
+    setCurrentTime(0);
+    setLoopRange(null);
+    setLoopItemIndex(null);
+    setLoopItem(null);
+    setRepeatCount(0);
+    setIsLoadingTranscript(true);
 
     fetch(`/api/transcript?videoId=${videoId}`)
       .then((res) => res.json())
@@ -71,9 +68,15 @@ export default function Home() {
       })
       .catch(() => setTranscriptError("網路錯誤，無法取得字幕"))
       .finally(() => setIsLoadingTranscript(false));
-
-    return () => clearTimeout(resetTimer);
   }, [videoId]);
+
+  // Auto-fetch when videoId changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchTranscript();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [fetchTranscript]);
 
   const handleTimeUpdate = useCallback((time: number) => setCurrentTime(time), []);
 
@@ -209,6 +212,7 @@ export default function Home() {
               onSetLoop={handleSetLoop}
               onClearLoop={handleClearLoop}
               onSeek={handleSeek}
+              onManualFetch={fetchTranscript}
             />
           </section>
 

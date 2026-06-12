@@ -35,6 +35,7 @@ interface BilingualTranscriptProps {
   onSetLoop: (item: TranscriptItem, index: number) => void;
   onClearLoop: () => void;
   onSeek: (time: number) => void;
+  onManualFetch?: () => void;
 }
 
 // ── Mock dictionary ─────────────────────────────────────────────────────────
@@ -64,7 +65,7 @@ export default function BilingualTranscript({
   sentences, onSentencesChange, selectedSentenceIndex, onSelectSentenceIndex,
   autoTranscript, currentTime, isLoadingTranscript, transcriptError, isAiGenerated,
   loopItemIndex, onSetLoop, onClearLoop,
-  onSeek,
+  onSeek, onManualFetch,
 }: BilingualTranscriptProps) {
   const [clickedWord, setClickedWord] = useState<string | null>(null);
   const [wordDef, setWordDef] = useState<{ definition: string; pos: string; detail: string } | null>(null);
@@ -239,6 +240,19 @@ export default function BilingualTranscript({
               </button>
             )}
 
+            {/* Manual Fetch Button */}
+            {onManualFetch && (
+              <button
+                onClick={onManualFetch}
+                disabled={isLoadingTranscript}
+                title="重新抓取字幕"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-900/50 hover:bg-slate-800 hover:border-nvidia/40 text-xs text-slate-300 hover:text-white transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <RotateCcw className={`w-3.5 h-3.5 ${isLoadingTranscript ? 'animate-spin text-nvidia' : ''}`} />
+                <span className="text-[10px] font-mono hidden sm:inline">REFRESH</span>
+              </button>
+            )}
+
             {/* Copy Full Transcript */}
             {isAutoMode && (
               <button
@@ -294,10 +308,19 @@ export default function BilingualTranscript({
         {transcriptError && !isLoadingTranscript && (
           <div className="flex items-start gap-3 p-4 border border-amber-900/50 rounded-xl bg-amber-950/20 mb-4">
             <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
-            <div>
+            <div className="flex-1">
               <p className="text-sm font-mono text-amber-300">{transcriptError}</p>
               <p className="text-xs text-slate-500 mt-1">已自動切換至「自訂句子」模式，可手動編輯練習句子。</p>
             </div>
+            {onManualFetch && (
+              <button
+                onClick={onManualFetch}
+                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-700/50 bg-amber-900/40 hover:bg-amber-800/50 hover:border-amber-500 text-xs text-amber-200 transition-all cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                重新抓取
+              </button>
+            )}
           </div>
         )}
 
