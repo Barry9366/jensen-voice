@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { Terminal, Cpu, Sparkles, BookOpen, Repeat, X, RefreshCw } from "lucide-react";
 import VideoPlayer, { LoopRange } from "@/components/VideoPlayer";
 import BilingualTranscript, { TranscriptItem } from "@/components/BilingualTranscript";
+import RecordingSlots from "@/components/RecordingSlots";
 
 interface Sentence {
   en: string;
@@ -28,6 +29,7 @@ export default function Home() {
   const [autoTranscript, setAutoTranscript] = useState<TranscriptItem[]>([]);
   const [isLoadingTranscript, setIsLoadingTranscript] = useState(false);
   const [transcriptError, setTranscriptError] = useState("");
+  const [isAiGenerated, setIsAiGenerated] = useState(false);
 
   // Loop / sentence repeat state
   const [loopRange, setLoopRange] = useState<LoopRange | null>(null);
@@ -35,29 +37,42 @@ export default function Home() {
   const [loopItem, setLoopItem] = useState<TranscriptItem | null>(null);
   const [repeatCount, setRepeatCount] = useState(0);
 
+  // Video seeking state
+  const [seekTime, setSeekTime] = useState<number | null>(null);
+
   // Fetch transcript when videoId changes
   useEffect(() => {
     if (!videoId) return;
-    setAutoTranscript([]);
-    setTranscriptError("");
-    setCurrentTime(0);
-    setLoopRange(null);
-    setLoopItemIndex(null);
-    setLoopItem(null);
-    setRepeatCount(0);
-    setIsLoadingTranscript(true);
+
+    // Reset states asynchronously to avoid ESLint cascading render error
+    const resetTimer = setTimeout(() => {
+      setAutoTranscript([]);
+      setTranscriptError("");
+      setIsAiGenerated(false);
+      setCurrentTime(0);
+      setLoopRange(null);
+      setLoopItemIndex(null);
+      setLoopItem(null);
+      setRepeatCount(0);
+      setIsLoadingTranscript(true);
+    }, 0);
+
     fetch(`/api/transcript?videoId=${videoId}`)
       .then((res) => res.json())
       .then((data) => {
         if (data.error) {
           setTranscriptError(data.message || "無法取得此影片的字幕");
           setAutoTranscript([]);
+          setIsAiGenerated(false);
         } else {
           setAutoTranscript(data.transcript || []);
+          setIsAiGenerated(data.isAiGenerated || false);
         }
       })
       .catch(() => setTranscriptError("網路錯誤，無法取得字幕"))
       .finally(() => setIsLoadingTranscript(false));
+
+    return () => clearTimeout(resetTimer);
   }, [videoId]);
 
   const handleTimeUpdate = useCallback((time: number) => setCurrentTime(time), []);
@@ -77,6 +92,14 @@ export default function Home() {
   }, []);
 
   const handleRepeat = useCallback(() => setRepeatCount((c) => c + 1), []);
+
+  const handleSeek = useCallback((time: number) => {
+    setSeekTime(time);
+  }, []);
+
+  const handleSeekComplete = useCallback(() => {
+    setSeekTime(null);
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans relative selection:bg-nvidia selection:text-black">
@@ -110,7 +133,7 @@ export default function Home() {
             {isLoadingTranscript ? (
               <div className="flex items-center gap-1.5 bg-slate-900/80 border border-slate-800 px-3 py-1.5 rounded-lg text-nvidia animate-pulse">
                 <span className="w-1.5 h-1.5 rounded-full bg-nvidia animate-ping"></span>
-                <span>字幕翻譯中...</span>
+                <span>字幕準備中...</span>
               </div>
             ) : autoTranscript.length > 0 ? (
               <div className="flex items-center gap-1.5 bg-slate-900/80 border border-slate-800 px-3 py-1.5 rounded-lg text-nvidia">
@@ -165,6 +188,8 @@ export default function Home() {
               onTimeUpdate={handleTimeUpdate}
               loopRange={loopRange}
               onRepeat={handleRepeat}
+              seekTime={seekTime}
+              onSeekComplete={handleSeekComplete}
             />
           </section>
 
@@ -179,15 +204,23 @@ export default function Home() {
               currentTime={currentTime}
               isLoadingTranscript={isLoadingTranscript}
               transcriptError={transcriptError}
+              isAiGenerated={isAiGenerated}
               loopItemIndex={loopItemIndex}
               onSetLoop={handleSetLoop}
               onClearLoop={handleClearLoop}
+              onSeek={handleSeek}
             />
           </section>
 
         </div>
 
-        {/* SECTION 3: Recording - 暫時停用，日後視需要啟用 */}
+        {/* SECTION 3: Recording - Practice Slots */}
+        <section id="recording-section" className="min-w-0">
+          <RecordingSlots
+            sentences={sentences}
+            selectedSentenceIndex={selectedSentenceIndex}
+          />
+        </section>
 
       </main>
 

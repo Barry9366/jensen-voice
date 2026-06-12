@@ -15,6 +15,8 @@ interface VideoPlayerProps {
   onTimeUpdate: (time: number) => void;
   loopRange?: LoopRange | null;
   onRepeat?: () => void;
+  seekTime?: number | null;
+  onSeekComplete?: () => void;
 }
 
 export function extractYouTubeId(url: string): string | null {
@@ -24,7 +26,15 @@ export function extractYouTubeId(url: string): string | null {
   return match && match[2].length === 11 ? match[2] : null;
 }
 
-export default function VideoPlayer({ videoId, onVideoIdChange, onTimeUpdate, loopRange, onRepeat }: VideoPlayerProps) {
+export default function VideoPlayer({ 
+  videoId, 
+  onVideoIdChange, 
+  onTimeUpdate, 
+  loopRange, 
+  onRepeat,
+  seekTime,
+  onSeekComplete
+}: VideoPlayerProps) {
   const [inputUrl, setInputUrl] = useState("");
   const [error, setError] = useState("");
   const playerRef = useRef<YouTubePlayer | null>(null);
@@ -40,7 +50,19 @@ export default function VideoPlayer({ videoId, onVideoIdChange, onTimeUpdate, lo
   // Reset time when video changes
   useEffect(() => {
     onTimeUpdate(0);
-  }, [videoId]);
+  }, [videoId, onTimeUpdate]);
+
+  // Handle external seek requests
+  useEffect(() => {
+    if (seekTime !== null && seekTime !== undefined && playerRef.current) {
+      try {
+        playerRef.current.seekTo(seekTime, true);
+      } catch (err) {
+        console.warn("Failed to seek player:", err);
+      }
+      onSeekComplete?.();
+    }
+  }, [seekTime, onSeekComplete]);
 
   const startPolling = () => {
     if (intervalRef.current) clearInterval(intervalRef.current);

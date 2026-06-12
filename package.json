@@ -9,7 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@distube/ytdl-core": "^4.16.12",
     "@vercel/blob": "^2.4.0",
+    "form-data": "^4.0.5",
     "lucide-react": "^1.17.0",
     "next": "16.2.9",
     "react": "19.2.4",

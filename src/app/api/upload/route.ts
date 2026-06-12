@@ -19,9 +19,10 @@ export async function POST(request: Request) {
         message: "Offline simulated upload successful",
         mocked: true,
       });
-    } catch (e: any) {
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
       return NextResponse.json(
-        { error: "Failed to parse form data: " + e.message },
+        { error: "Failed to parse form data: " + message },
         { status: 400 }
       );
     }
@@ -46,10 +47,11 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json(blob);
-  } catch (error: any) {
+  } catch (error) {
     console.error("[Jensen Voice API] Upload error:", error);
+    const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: "Upload failed: " + error.message },
+      { error: "Upload failed: " + message },
       { status: 500 }
     );
   }

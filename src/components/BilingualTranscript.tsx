@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
   BookOpen, Edit3, X, HelpCircle, Sparkles, Check, RotateCcw,
-  Captions, Loader2, AlertTriangle, Languages, Repeat, RepeatIcon,
+  Captions, Loader2, AlertTriangle, Languages, Repeat, Copy, Lock, Unlock,
 } from "lucide-react";
 
 export interface TranscriptItem {
@@ -29,10 +29,12 @@ interface BilingualTranscriptProps {
   currentTime: number; // seconds
   isLoadingTranscript: boolean;
   transcriptError: string;
+  isAiGenerated?: boolean;
   // Loop (sentence repeat)
   loopItemIndex: number | null;
   onSetLoop: (item: TranscriptItem, index: number) => void;
   onClearLoop: () => void;
+  onSeek: (time: number) => void;
 }
 
 // ── Mock dictionary ─────────────────────────────────────────────────────────
@@ -60,43 +62,113 @@ const DEFAULT_SENTENCES: Sentence[] = [
 
 export default function BilingualTranscript({
   sentences, onSentencesChange, selectedSentenceIndex, onSelectSentenceIndex,
-  autoTranscript, currentTime, isLoadingTranscript, transcriptError,
+  autoTranscript, currentTime, isLoadingTranscript, transcriptError, isAiGenerated,
   loopItemIndex, onSetLoop, onClearLoop,
+  onSeek,
 }: BilingualTranscriptProps) {
   const [clickedWord, setClickedWord] = useState<string | null>(null);
   const [wordDef, setWordDef] = useState<{ definition: string; pos: string; detail: string } | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editList, setEditList] = useState<Sentence[]>([...sentences]);
   const [mode, setMode] = useState<"auto" | "manual">("auto");
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+  const [isCopied, setIsCopied] = useState(false);
+
+  // AI custom slot generation states
+  const [aiInput, setAiInput] = useState("");
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
+  const [aiError, setAiError] = useState("");
 
   const activeItemRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const [lastActiveIndex, setLastActiveIndex] = useState<number>(0);
 
   // Determine active transcript index from current playback time
-  const activeTranscriptIndex = autoTranscript.findIndex((item) => {
+  const foundIndex = autoTranscript.findIndex((item) => {
     const startSec = item.offset / 1000;
     const endSec = (item.offset + item.duration) / 1000;
     return currentTime >= startSec && currentTime < endSec;
   });
 
+  const activeTranscriptIndex = foundIndex !== -1 ? foundIndex : lastActiveIndex;
+
+  // Track the last active index to avoid blinking during gaps
+  useEffect(() => {
+    if (foundIndex !== -1) {
+      const timer = setTimeout(() => setLastActiveIndex(foundIndex), 0);
+      return () => clearTimeout(timer);
+    }
+  }, [foundIndex]);
+
   // Auto-scroll to active transcript item
   useEffect(() => {
-    if (mode === "auto" && activeItemRef.current && scrollContainerRef.current) {
+    if (mode === "auto" && autoScrollEnabled && activeItemRef.current && scrollContainerRef.current) {
       activeItemRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-  }, [activeTranscriptIndex, mode]);
+  }, [activeTranscriptIndex, mode, autoScrollEnabled]);
 
-  // Switch to auto mode when transcript loads
+  // Switch to auto mode when transcript loads (asynchronously to satisfy ESLint)
   useEffect(() => {
-    if (autoTranscript.length > 0) setMode("auto");
+    if (autoTranscript.length > 0) {
+      const timer = setTimeout(() => setMode("auto"), 0);
+      return () => clearTimeout(timer);
+    }
   }, [autoTranscript.length]);
 
-  // Switch to manual mode when no transcript
+  // Switch to manual mode when no transcript (asynchronously to satisfy ESLint)
   useEffect(() => {
     if (!isLoadingTranscript && autoTranscript.length === 0 && !transcriptError) {
-      setMode("manual");
+      const timer = setTimeout(() => setMode("manual"), 0);
+      return () => clearTimeout(timer);
     }
   }, [isLoadingTranscript, autoTranscript.length, transcriptError]);
+
+  const formatTime = (ms: number) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const handleCopyFullTranscript = () => {
+    if (autoTranscript.length === 0) return;
+    const formatted = autoTranscript
+      .map((item) => `[${formatTime(item.offset)}] EN: ${item.text}\n[${formatTime(item.offset)}] 中: ${item.zh || "（無翻譯）"}`)
+      .join("\n\n");
+    
+    navigator.clipboard.writeText(formatted)
+      .then(() => {
+        setIsCopied(true);
+        setTimeout(() => setIsCopied(false), 2000);
+      })
+      .catch((err) => {
+        console.error("Failed to copy transcript:", err);
+      });
+  };
+
+  const handleGenerateAiSentences = async () => {
+    if (!aiInput.trim()) return;
+    setIsGeneratingAi(true);
+    setAiError("");
+    try {
+      const res = await fetch("/api/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: aiInput }),
+      });
+      const data = await res.json();
+      if (res.ok && data.sentences) {
+        setEditList(data.sentences);
+        setAiInput("");
+      } else {
+        setAiError(data.message || "自動生成失敗，請稍後再試。");
+      }
+    } catch {
+      setAiError("網路錯誤，無法連線至翻譯伺服器。");
+    } finally {
+      setIsGeneratingAi(false);
+    }
+  };
 
   const getCleanWord = (raw: string) => raw.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"']/g, "").toLowerCase();
 
@@ -142,9 +214,43 @@ export default function BilingualTranscript({
             <h2 className="text-md font-bold text-slate-100 tracking-wider font-mono">
               BILINGUAL TRANSCRIPT
             </h2>
+            {isAiGenerated && (
+              <span className="ml-2 px-2 py-0.5 rounded text-[10px] font-bold bg-nvidia/20 text-nvidia border border-nvidia/30 flex items-center gap-1">
+                <Sparkles className="w-3 h-3" />
+                AI 生成字幕
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Auto Scroll Toggle */}
+            {isAutoMode && (
+              <button
+                onClick={() => setAutoScrollEnabled(!autoScrollEnabled)}
+                title={autoScrollEnabled ? "關閉自動滾動" : "開啟自動滾動"}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all cursor-pointer ${
+                  autoScrollEnabled
+                    ? "bg-nvidia/10 border-nvidia/35 text-nvidia hover:bg-nvidia/20"
+                    : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-300"
+                }`}
+              >
+                {autoScrollEnabled ? <Lock className="w-3.5 h-3.5 animate-pulse" /> : <Unlock className="w-3.5 h-3.5" />}
+                <span className="text-[10px] hidden sm:inline">{autoScrollEnabled ? "SCROLL ON" : "SCROLL OFF"}</span>
+              </button>
+            )}
+
+            {/* Copy Full Transcript */}
+            {isAutoMode && (
+              <button
+                onClick={handleCopyFullTranscript}
+                title="複製整部影片的中英對照字幕"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-900/50 hover:bg-slate-800 hover:border-nvidia/40 text-xs text-slate-300 hover:text-white transition-all cursor-pointer"
+              >
+                {isCopied ? <Check className="w-3.5 h-3.5 text-nvidia animate-bounce" /> : <Copy className="w-3.5 h-3.5" />}
+                <span className="text-[10px] font-mono">{isCopied ? "COPIED" : "COPY ALL"}</span>
+              </button>
+            )}
+
             {/* Mode toggle */}
             {autoTranscript.length > 0 && (
               <div className="flex text-[10px] font-mono rounded-lg overflow-hidden border border-slate-800">
@@ -176,10 +282,10 @@ export default function BilingualTranscript({
         {/* Loading state */}
         {isLoadingTranscript && (
           <div className="flex items-center gap-3 p-4 border border-slate-800 rounded-xl bg-slate-900/40 mb-4">
-            <Loader2 className="w-4 h-4 text-nvidia animate-spin" />
+            <Loader2 className="w-4 h-4 text-nvidia animate-spin shrink-0" />
             <div>
-              <p className="text-sm font-mono text-slate-300">正在抓取字幕並翻譯成中文...</p>
-              <p className="text-xs text-slate-500">使用 MyMemory 免費翻譯 API，請稍候</p>
+              <p className="text-sm font-mono text-slate-300">正在抓取並翻譯字幕...</p>
+              <p className="text-xs text-slate-500">若無內建字幕，系統將自動下載音訊並使用 AI 語音辨識，這可能需要數十秒，請耐心等候。</p>
             </div>
           </div>
         )}
@@ -207,7 +313,9 @@ export default function BilingualTranscript({
                 <div
                   key={idx}
                   ref={isActive ? activeItemRef : null}
-                  className={`rounded-xl px-4 py-3 transition-all duration-300 border ${
+                  onClick={() => onSeek(item.offset / 1000)}
+                  title="點擊此句可跳轉影片播放時間"
+                  className={`rounded-xl px-4 py-3 transition-all duration-300 border cursor-pointer ${
                     isActive
                       ? "bg-nvidia/8 border-nvidia/60 shadow-[0_0_14px_rgba(118,185,0,0.18)] scale-[1.01]"
                       : isPast
@@ -232,7 +340,10 @@ export default function BilingualTranscript({
                             return (
                               <button
                                 key={wIdx}
-                                onClick={() => handleWordClick(word)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleWordClick(word);
+                                }}
                                 className={`hover:text-nvidia hover:scale-105 active:scale-95 transition-all outline-none cursor-pointer ${
                                   cleaned && DICTIONARY[cleaned] ? "text-nvidia-neon border-b border-dashed border-nvidia-neon/40 font-bold" : ""
                                 }`}
@@ -257,7 +368,14 @@ export default function BilingualTranscript({
                     </div>
                     {/* Loop button */}
                     <button
-                      onClick={() => loopItemIndex === idx ? onClearLoop() : onSetLoop(item, idx)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (loopItemIndex === idx) {
+                          onClearLoop();
+                        } else {
+                          onSetLoop(item, idx);
+                        }
+                      }}
                       title={loopItemIndex === idx ? "停止重複練習" : "設為重複練習句"}
                       className={`shrink-0 mt-0.5 p-1.5 rounded-lg border text-xs transition-all cursor-pointer ${
                         loopItemIndex === idx
@@ -373,6 +491,44 @@ export default function BilingualTranscript({
               </button>
             </div>
             <div className="p-6 overflow-y-auto flex-1 space-y-4">
+              {/* AI Auto-generate Section */}
+              <div className="border border-slate-800 bg-slate-900/30 rounded-xl p-4 mb-4 font-sans">
+                <h4 className="text-xs font-mono font-bold text-nvidia-neon mb-2 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-nvidia-neon" /> AI 段落自動分句與翻譯
+                </h4>
+                <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
+                  貼上整段英文演講或文章，點擊後系統會自動進行英文斷句，並批次翻譯為繁體中文，快速填入自訂練習槽位。
+                </p>
+                <textarea
+                  placeholder="在此貼上英文段落（例如：Welcome to the new era. NVIDIA is reinventing computing...）"
+                  value={aiInput}
+                  onChange={(e) => setAiInput(e.target.value)}
+                  rows={3}
+                  className="w-full bg-slate-950 border border-slate-800 focus:border-nvidia/60 text-slate-200 text-xs p-3 rounded-lg outline-none resize-y mb-2 font-sans leading-relaxed"
+                />
+                {aiError && (
+                  <p className="text-[11px] text-red-400 mb-2 font-mono">{aiError}</p>
+                )}
+                <button
+                  type="button"
+                  onClick={handleGenerateAiSentences}
+                  disabled={isGeneratingAi || !aiInput.trim()}
+                  className="w-full py-2 bg-nvidia hover:bg-nvidia/90 disabled:bg-slate-800 text-black disabled:text-slate-500 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {isGeneratingAi ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      正在分句與翻譯中...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5" />
+                      自動生成中英對照 (上限 10 句)
+                    </>
+                  )}
+                </button>
+              </div>
+
               {editList.map((item, index) => (
                 <div key={index} className="flex flex-col gap-2 p-3 bg-slate-900/40 border border-slate-800 rounded-xl">
                   <div className="flex items-center justify-between text-xs font-mono">

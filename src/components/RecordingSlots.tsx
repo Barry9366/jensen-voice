@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Mic, Square, Play, Pause, CloudLightning, CloudCheck, CheckCircle2, ShieldAlert } from "lucide-react";
+import { Mic, Square, Play, Pause, CloudLightning, CloudCheck, ShieldAlert } from "lucide-react";
 
 interface Sentence {
   en: string;
@@ -44,15 +44,18 @@ export default function RecordingSlots({ sentences, selectedSentenceIndex }: Rec
 
   // Clean up all resources on unmount
   useEffect(() => {
+    const currentTimers = timerIntervals.current;
+    const currentRecorders = mediaRecorders.current;
+    const currentPlayers = audioPlayers.current;
     return () => {
       // Clear timers
-      Object.values(timerIntervals.current).forEach(clearInterval);
+      Object.values(currentTimers).forEach(clearInterval);
       // Stop media recorders
-      Object.values(mediaRecorders.current).forEach(recorder => {
+      Object.values(currentRecorders).forEach(recorder => {
         if (recorder.state === "recording") recorder.stop();
       });
       // Pause audio players
-      Object.values(audioPlayers.current).forEach(player => player.pause());
+      Object.values(currentPlayers).forEach(player => player.pause());
     };
   }, []);
 
@@ -78,7 +81,7 @@ export default function RecordingSlots({ sentences, selectedSentenceIndex }: Rec
       
       try {
         mediaRecorder = new MediaRecorder(stream, options);
-      } catch (e) {
+      } catch {
         // Fallback for Safari/browsers that do not support webm audio
         mediaRecorder = new MediaRecorder(stream);
       }
@@ -131,7 +134,7 @@ export default function RecordingSlots({ sentences, selectedSentenceIndex }: Rec
       }, 1000);
 
       mediaRecorder.start();
-    } catch (err: any) {
+    } catch (err) {
       console.error("Recording error:", err);
       setErrorMsg("無法存取麥克風。請確認瀏覽器已允許麥克風權限！");
     }

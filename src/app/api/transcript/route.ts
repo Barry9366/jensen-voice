@@ -71,7 +71,7 @@ export async function GET(request: Request) {
   } catch {
     try {
       rawTranscript = await YoutubeTranscript.fetchTranscript(videoId);
-    } catch (e: any) {
+    } catch {
       return NextResponse.json(
         {
           error: "no_captions",
