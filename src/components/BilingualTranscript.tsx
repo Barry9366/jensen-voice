@@ -36,6 +36,7 @@ interface BilingualTranscriptProps {
   onClearLoop: () => void;
   onSeek: (time: number) => void;
   onManualFetch?: () => void;
+  onImportTranscript?: (transcript: TranscriptItem[]) => void;
 }
 
 // ── Mock dictionary ─────────────────────────────────────────────────────────
@@ -65,7 +66,7 @@ export default function BilingualTranscript({
   sentences, onSentencesChange, selectedSentenceIndex, onSelectSentenceIndex,
   autoTranscript, currentTime, isLoadingTranscript, transcriptError, isAiGenerated,
   loopItemIndex, onSetLoop, onClearLoop,
-  onSeek, onManualFetch,
+  onSeek, onManualFetch, onImportTranscript
 }: BilingualTranscriptProps) {
   const [clickedWord, setClickedWord] = useState<string | null>(null);
   const [wordDef, setWordDef] = useState<{ definition: string; pos: string; detail: string } | null>(null);
@@ -75,10 +76,19 @@ export default function BilingualTranscript({
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const [isCopied, setIsCopied] = useState(false);
 
+  // VoiceTube style language toggle
+  const [displayLanguage, setDisplayLanguage] = useState<"en" | "ch" | "both">("both");
+
   // AI custom slot generation states
   const [aiInput, setAiInput] = useState("");
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [aiError, setAiError] = useState("");
+
+  // Recording & Shadowing states
+  const [recordingIndex, setRecordingIndex] = useState<number | null>(null);
+  const [recordedAudioUrls, setRecordedAudioUrls] = useState<{ [index: number]: string }>({});
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   const activeItemRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -92,6 +102,39 @@ export default function BilingualTranscript({
   });
 
   const activeTranscriptIndex = foundIndex !== -1 ? foundIndex : lastActiveIndex;
+
+  const toggleRecording = async (index: number) => {
+    if (recordingIndex === index) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        mediaRecorderRef.current.stop();
+      }
+      setRecordingIndex(null);
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) audioChunksRef.current.push(event.data);
+        };
+
+        mediaRecorder.onstop = () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+          const audioUrl = URL.createObjectURL(audioBlob);
+          setRecordedAudioUrls((prev) => ({ ...prev, [index]: audioUrl }));
+          stream.getTracks().forEach(track => track.stop());
+        };
+
+        mediaRecorder.start();
+        setRecordingIndex(index);
+      } catch (err) {
+        console.error("Microphone access denied:", err);
+        alert("無法存取麥克風，請確認瀏覽器權限設定。");
+      }
+    }
+  };
 
   // Track the last active index to avoid blinking during gaps
   useEffect(() => {
@@ -136,7 +179,7 @@ export default function BilingualTranscript({
     const formatted = autoTranscript
       .map((item) => `[${formatTime(item.offset)}] EN: ${item.text}\n[${formatTime(item.offset)}] 中: ${item.zh || "（無翻譯）"}`)
       .join("\n\n");
-    
+
     navigator.clipboard.writeText(formatted)
       .then(() => {
         setIsCopied(true);
@@ -173,15 +216,44 @@ export default function BilingualTranscript({
 
   const getCleanWord = (raw: string) => raw.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"']/g, "").toLowerCase();
 
-  const handleWordClick = (word: string) => {
+  const handleWordClick = async (word: string) => {
     const cleaned = getCleanWord(word);
     if (!cleaned) return;
-    setClickedWord(word);
-    setWordDef(DICTIONARY[cleaned] ?? {
-      pos: "常用單字",
-      definition: `「${cleaned}」`,
-      detail: "這是影片中出現的英語單字。點擊任何單字可隨時查詢，搭配影片反覆跟讀效果最佳！",
+    setClickedWord(cleaned);
+    setWordDef({
+      definition: "查詢中...",
+      pos: "",
+      detail: "正在從線上字典獲取即時解釋...",
     });
+
+    try {
+      const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${cleaned}`);
+      if (res.ok) {
+        const data = await res.json();
+        const entry = data[0];
+        const pos = entry.meanings[0]?.partOfSpeech || "";
+        const definition = entry.meanings[0]?.definitions[0]?.definition || "查無解釋";
+        const phonetics = entry.phonetics.find((p: any) => p.text)?.text || "";
+
+        setWordDef({
+          definition: definition,
+          pos: phonetics ? `${pos} ${phonetics}` : pos,
+          detail: "資料來源: Free Dictionary API",
+        });
+      } else {
+        setWordDef({
+          definition: "查無此單字",
+          pos: "",
+          detail: "可能是專有名詞、縮寫或是查無此字的變體形式。",
+        });
+      }
+    } catch {
+      setWordDef({
+        definition: "查詢失敗",
+        pos: "",
+        detail: "無法連線至線上字典 API，請檢查網路連線。",
+      });
+    }
   };
 
   const handleSaveEdits = () => {
@@ -201,8 +273,36 @@ export default function BilingualTranscript({
 
   const isAutoMode = mode === "auto" && autoTranscript.length > 0;
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImportJson = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const result = event.target?.result;
+        if (typeof result === "string") {
+          const data = JSON.parse(result);
+          if (data.transcript && Array.isArray(data.transcript)) {
+            if (onImportTranscript) {
+              onImportTranscript(data.transcript);
+            }
+          } else {
+            alert("匯入的檔案不包含 transcript 欄位。");
+          }
+        }
+      } catch (err) {
+        alert("JSON 格式錯誤，無法匯入字幕。");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ""; // Reset
+  };
+
   return (
-    <div className="w-full flex flex-col gap-5">
+    <div className="w-full flex flex-col gap-6">
 
       {/* ── Transcript / Sentences ── */}
       <div className="bg-cyber-card border border-cyber-border rounded-2xl p-6 shadow-2xl relative">
@@ -215,41 +315,40 @@ export default function BilingualTranscript({
             <h2 className="text-md font-bold text-slate-100 tracking-wider font-mono">
               BILINGUAL TRANSCRIPT
             </h2>
-            {isAiGenerated && (
-              <span className="ml-2 px-2 py-0.5 rounded text-[10px] font-bold bg-nvidia/20 text-nvidia border border-nvidia/30 flex items-center gap-1">
-                <Sparkles className="w-3 h-3" />
-                AI 生成字幕
-              </span>
-            )}
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Import JSON Input */}
+            <input 
+              type="file" 
+              accept=".json" 
+              ref={fileInputRef} 
+              style={{ display: "none" }} 
+              onChange={handleImportJson} 
+            />
+            {onImportTranscript && (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                title="手動匯入 JSON 字幕檔"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-900/50 hover:bg-slate-800 hover:border-nvidia/40 text-xs text-slate-300 hover:text-white transition-all cursor-pointer"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                <span className="text-[10px] font-mono hidden sm:inline">IMPORT JSON</span>
+              </button>
+            )}
+
             {/* Auto Scroll Toggle */}
             {isAutoMode && (
               <button
                 onClick={() => setAutoScrollEnabled(!autoScrollEnabled)}
                 title={autoScrollEnabled ? "關閉自動滾動" : "開啟自動滾動"}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all cursor-pointer ${
-                  autoScrollEnabled
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all cursor-pointer ${autoScrollEnabled
                     ? "bg-nvidia/10 border-nvidia/35 text-nvidia hover:bg-nvidia/20"
                     : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-300"
-                }`}
+                  }`}
               >
                 {autoScrollEnabled ? <Lock className="w-3.5 h-3.5 animate-pulse" /> : <Unlock className="w-3.5 h-3.5" />}
                 <span className="text-[10px] hidden sm:inline">{autoScrollEnabled ? "SCROLL ON" : "SCROLL OFF"}</span>
-              </button>
-            )}
-
-            {/* Manual Fetch Button */}
-            {onManualFetch && (
-              <button
-                onClick={onManualFetch}
-                disabled={isLoadingTranscript}
-                title="重新抓取字幕"
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-900/50 hover:bg-slate-800 hover:border-nvidia/40 text-xs text-slate-300 hover:text-white transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <RotateCcw className={`w-3.5 h-3.5 ${isLoadingTranscript ? 'animate-spin text-nvidia' : ''}`} />
-                <span className="text-[10px] font-mono hidden sm:inline">REFRESH</span>
               </button>
             )}
 
@@ -263,6 +362,30 @@ export default function BilingualTranscript({
                 {isCopied ? <Check className="w-3.5 h-3.5 text-nvidia animate-bounce" /> : <Copy className="w-3.5 h-3.5" />}
                 <span className="text-[10px] font-mono">{isCopied ? "COPIED" : "COPY ALL"}</span>
               </button>
+            )}
+
+            {/* Language toggle */}
+            {isAutoMode && (
+              <div className="flex text-[10px] font-mono rounded-lg overflow-hidden border border-slate-700 bg-slate-900">
+                <button
+                  onClick={() => setDisplayLanguage("en")}
+                  className={`px-3 py-1.5 transition-all cursor-pointer ${displayLanguage === "en" ? "bg-slate-700 text-white font-bold" : "text-slate-400 hover:text-white"}`}
+                >
+                  EN
+                </button>
+                <button
+                  onClick={() => setDisplayLanguage("ch")}
+                  className={`px-3 py-1.5 transition-all cursor-pointer border-l border-slate-700 ${displayLanguage === "ch" ? "bg-slate-700 text-white font-bold" : "text-slate-400 hover:text-white"}`}
+                >
+                  中文
+                </button>
+                <button
+                  onClick={() => setDisplayLanguage("both")}
+                  className={`px-3 py-1.5 transition-all cursor-pointer border-l border-slate-700 ${displayLanguage === "both" ? "bg-nvidia text-black font-bold" : "text-slate-400 hover:text-white"}`}
+                >
+                  雙語
+                </button>
+              </div>
             )}
 
             {/* Mode toggle */}
@@ -308,19 +431,10 @@ export default function BilingualTranscript({
         {transcriptError && !isLoadingTranscript && (
           <div className="flex items-start gap-3 p-4 border border-amber-900/50 rounded-xl bg-amber-950/20 mb-4">
             <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
-            <div className="flex-1">
+            <div>
               <p className="text-sm font-mono text-amber-300">{transcriptError}</p>
               <p className="text-xs text-slate-500 mt-1">已自動切換至「自訂句子」模式，可手動編輯練習句子。</p>
             </div>
-            {onManualFetch && (
-              <button
-                onClick={onManualFetch}
-                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-700/50 bg-amber-900/40 hover:bg-amber-800/50 hover:border-amber-500 text-xs text-amber-200 transition-all cursor-pointer"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                重新抓取
-              </button>
-            )}
           </div>
         )}
 
@@ -331,6 +445,7 @@ export default function BilingualTranscript({
               const isActive = idx === activeTranscriptIndex;
               const isPast = currentTime > (item.offset + item.duration) / 1000;
               const words = item.text.split(/\s+/);
+              const isLoopingThis = loopItemIndex === idx;
 
               return (
                 <div
@@ -338,13 +453,12 @@ export default function BilingualTranscript({
                   ref={isActive ? activeItemRef : null}
                   onClick={() => onSeek(item.offset / 1000)}
                   title="點擊此句可跳轉影片播放時間"
-                  className={`rounded-xl px-4 py-3 transition-all duration-300 border cursor-pointer ${
-                    isActive
+                  className={`rounded-xl px-4 py-3 transition-all duration-300 border cursor-pointer ${isActive
                       ? "bg-nvidia/8 border-nvidia/60 shadow-[0_0_14px_rgba(118,185,0,0.18)] scale-[1.01]"
                       : isPast
                         ? "bg-slate-950/20 border-slate-900/30 opacity-50"
                         : "bg-slate-950/10 border-slate-800/30 hover:bg-slate-900/20"
-                  }`}
+                    }`}
                 >
                   {isActive && (
                     <div className="flex items-center gap-1.5 mb-2">
@@ -355,28 +469,29 @@ export default function BilingualTranscript({
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 space-y-2.5">
                       {/* English line */}
-                      <div>
-                        <span className="text-[10px] font-mono font-bold text-blue-400 tracking-wider uppercase">EN</span>
-                        <div className="text-sm font-semibold leading-relaxed text-slate-100 flex flex-wrap gap-x-1.5 gap-y-0.5">
-                          {words.map((word, wIdx) => {
-                            const cleaned = getCleanWord(word);
-                            return (
-                              <button
-                                key={wIdx}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleWordClick(word);
-                                }}
-                                className={`hover:text-nvidia hover:scale-105 active:scale-95 transition-all outline-none cursor-pointer ${
-                                  cleaned && DICTIONARY[cleaned] ? "text-nvidia-neon border-b border-dashed border-nvidia-neon/40 font-bold" : ""
-                                }`}
-                              >
-                                {word}
-                              </button>
-                            );
-                          })}
+                      {displayLanguage !== "ch" && (
+                        <div>
+                          <span className="text-[10px] font-mono font-bold text-blue-400 tracking-wider uppercase">EN</span>
+                          <div className="text-sm font-semibold leading-relaxed text-slate-100 flex flex-wrap gap-x-1.5 gap-y-0.5">
+                            {words.map((word, wIdx) => {
+                              const cleaned = getCleanWord(word);
+                              return (
+                                <button
+                                  key={wIdx}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleWordClick(word);
+                                  }}
+                                  className={`hover:text-nvidia hover:scale-105 active:scale-95 transition-all outline-none cursor-pointer ${cleaned && DICTIONARY[cleaned] ? "text-nvidia-neon border-b border-dashed border-nvidia-neon/40 font-bold" : ""
+                                    }`}
+                                >
+                                  {word}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
+                      )}
                       {/* Chinese translation line */}
                       <div>
                         <span className="text-[10px] font-mono font-bold text-amber-400 tracking-wider uppercase">中</span>
@@ -400,11 +515,10 @@ export default function BilingualTranscript({
                         }
                       }}
                       title={loopItemIndex === idx ? "停止重複練習" : "設為重複練習句"}
-                      className={`shrink-0 mt-0.5 p-1.5 rounded-lg border text-xs transition-all cursor-pointer ${
-                        loopItemIndex === idx
+                      className={`shrink-0 mt-0.5 p-1.5 rounded-lg border text-xs transition-all cursor-pointer ${loopItemIndex === idx
                           ? "bg-nvidia text-black border-nvidia shadow-[0_0_8px_rgba(118,185,0,0.4)] animate-pulse"
                           : "bg-slate-900 border-slate-700 text-slate-400 hover:border-nvidia/50 hover:text-nvidia"
-                      }`}
+                        }`}
                     >
                       <Repeat className="w-3.5 h-3.5" />
                     </button>
@@ -425,9 +539,8 @@ export default function BilingualTranscript({
                 <div
                   key={idx}
                   onClick={() => onSelectSentenceIndex(idx)}
-                  className={`group border rounded-xl p-4 transition-all duration-300 cursor-pointer ${
-                    isSelected ? "bg-slate-900/80 border-nvidia/50 shadow-[0_0_12px_rgba(118,185,0,0.15)]" : "bg-slate-950/30 border-slate-800/60 hover:bg-slate-900/30"
-                  }`}
+                  className={`group border rounded-xl p-4 transition-all duration-300 cursor-pointer ${isSelected ? "bg-slate-900/80 border-nvidia/50 shadow-[0_0_12px_rgba(118,185,0,0.15)]" : "bg-slate-950/30 border-slate-800/60 hover:bg-slate-900/30"
+                    }`}
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${isSelected ? "bg-nvidia text-black font-bold" : "bg-slate-800 text-slate-400"}`}>

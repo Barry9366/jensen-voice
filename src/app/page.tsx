@@ -87,17 +87,23 @@ export default function Home() {
     setRepeatCount(0);
   }, []);
 
+  const handleRepeat = useCallback(() => setRepeatCount((c) => c + 1), []);
+
   const handleClearLoop = useCallback(() => {
-    setLoopRange(null);
     setLoopItemIndex(null);
     setLoopItem(null);
+    setLoopRange(null);
     setRepeatCount(0);
   }, []);
 
-  const handleRepeat = useCallback(() => setRepeatCount((c) => c + 1), []);
-
   const handleSeek = useCallback((time: number) => {
     setSeekTime(time);
+  }, []);
+
+  const handleImportTranscript = useCallback((transcript: TranscriptItem[]) => {
+    setAutoTranscript(transcript);
+    setIsAiGenerated(false); // Can be overridden if needed
+    setTranscriptError("");
   }, []);
 
   const handleSeekComplete = useCallback(() => {
@@ -213,6 +219,7 @@ export default function Home() {
               onClearLoop={handleClearLoop}
               onSeek={handleSeek}
               onManualFetch={fetchTranscript}
+              onImportTranscript={handleImportTranscript}
             />
           </section>
 

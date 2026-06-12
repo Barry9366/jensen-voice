@@ -40,6 +40,9 @@ export default function VideoPlayer({
   const playerRef = useRef<YouTubePlayer | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
+
   // Clean up interval on unmount
   useEffect(() => {
     return () => {
@@ -50,6 +53,7 @@ export default function VideoPlayer({
   // Reset time when video changes
   useEffect(() => {
     onTimeUpdate(0);
+    setIsPlaying(false);
   }, [videoId, onTimeUpdate]);
 
   // Handle external seek requests
@@ -57,6 +61,7 @@ export default function VideoPlayer({
     if (seekTime !== null && seekTime !== undefined && playerRef.current) {
       try {
         playerRef.current.seekTo(seekTime, true);
+        playerRef.current.playVideo();
       } catch (err) {
         console.warn("Failed to seek player:", err);
       }
@@ -93,13 +98,16 @@ export default function VideoPlayer({
 
   const handleReady = (event: YouTubeEvent) => {
     playerRef.current = event.target;
+    playerRef.current.setPlaybackRate(playbackRate);
   };
 
   const handleStateChange = (event: YouTubeEvent) => {
     // YT.PlayerState: PLAYING = 1, PAUSED = 2, ENDED = 0
     if (event.data === 1) {
+      setIsPlaying(true);
       startPolling();
     } else {
+      setIsPlaying(false);
       stopPolling();
       // Report final time on pause/end
       if (playerRef.current) {
@@ -107,6 +115,31 @@ export default function VideoPlayer({
           onTimeUpdate(playerRef.current.getCurrentTime());
         } catch {}
       }
+    }
+  };
+
+  const togglePlayPause = () => {
+    if (playerRef.current) {
+      if (isPlaying) {
+        playerRef.current.pauseVideo();
+      } else {
+        playerRef.current.playVideo();
+      }
+    }
+  };
+
+  const skipTime = (amount: number) => {
+    if (playerRef.current) {
+      const currentTime = playerRef.current.getCurrentTime();
+      playerRef.current.seekTo(currentTime + amount, true);
+    }
+  };
+
+  const handleRateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const rate = parseFloat(e.target.value);
+    setPlaybackRate(rate);
+    if (playerRef.current) {
+      playerRef.current.setPlaybackRate(rate);
     }
   };
 
@@ -197,6 +230,55 @@ export default function VideoPlayer({
           className="absolute inset-0 w-full h-full"
           iframeClassName="w-full h-full border-0"
         />
+      </div>
+
+      {/* VoiceTube Style Playback Controls */}
+      <div className="w-full flex items-center justify-between bg-slate-900/60 p-3 rounded-xl border border-slate-800/80">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={togglePlayPause}
+            className="w-10 h-10 flex items-center justify-center bg-nvidia text-black rounded-full hover:bg-nvidia/80 transition-colors shadow-lg"
+          >
+            {isPlaying ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            )}
+          </button>
+          
+          <button 
+            onClick={() => skipTime(-5)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 17l-5-5 5-5M18 17l-5-5 5-5"/></svg>
+            -5s
+          </button>
+
+          <button 
+            onClick={() => skipTime(5)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono transition-colors"
+          >
+            +5s
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 17l5-5-5-5M6 17l5-5-5-5"/></svg>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 font-mono">SPEED</span>
+            <select
+              value={playbackRate}
+              onChange={handleRateChange}
+              className="bg-slate-800 border border-slate-700 text-slate-200 text-xs py-1 px-2 rounded outline-none focus:border-nvidia cursor-pointer"
+            >
+              <option value="0.5">0.5x</option>
+              <option value="0.75">0.75x</option>
+              <option value="1">1.0x (Normal)</option>
+              <option value="1.25">1.25x</option>
+              <option value="1.5">1.5x</option>
+            </select>
+          </div>
+        </div>
       </div>
     </div>
   );
