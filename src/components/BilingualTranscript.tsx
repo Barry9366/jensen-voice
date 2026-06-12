@@ -215,38 +215,46 @@ export default function BilingualTranscript({
                         : "bg-slate-950/10 border-slate-800/30 hover:bg-slate-900/20"
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1">
-                      {isActive && (
-                        <div className="flex items-center gap-1.5 mb-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-nvidia animate-ping"></span>
-                          <span className="text-[9px] font-mono text-nvidia font-bold tracking-widest">NOW PLAYING</span>
-                        </div>
-                      )}
-                      {/* English words - clickable */}
-                      <div className="text-sm font-semibold leading-relaxed text-slate-100 flex flex-wrap gap-x-1.5 gap-y-0.5">
-                        {words.map((word, wIdx) => {
-                          const cleaned = getCleanWord(word);
-                          return (
-                            <button
-                              key={wIdx}
-                              onClick={() => handleWordClick(word)}
-                              className={`hover:text-nvidia hover:scale-105 active:scale-95 transition-all outline-none cursor-pointer ${
-                                cleaned && DICTIONARY[cleaned] ? "text-nvidia-neon border-b border-dashed border-nvidia-neon/40 font-bold" : ""
-                              }`}
-                            >
-                              {word}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {/* Chinese translation */}
-                      <p className={`text-xs mt-1.5 tracking-wide flex items-center gap-1 ${isActive ? "text-slate-300" : "text-slate-500"}`}>
-                        <Languages className="w-3 h-3 shrink-0 text-nvidia/60" />
-                        {item.zh}
-                      </p>
+                  {isActive && (
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-nvidia animate-ping"></span>
+                      <span className="text-[9px] font-mono text-nvidia font-bold tracking-widest">NOW PLAYING</span>
                     </div>
-
+                  )}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 space-y-2.5">
+                      {/* English line */}
+                      <div>
+                        <span className="text-[10px] font-mono font-bold text-blue-400 tracking-wider uppercase">EN</span>
+                        <div className="text-sm font-semibold leading-relaxed text-slate-100 flex flex-wrap gap-x-1.5 gap-y-0.5">
+                          {words.map((word, wIdx) => {
+                            const cleaned = getCleanWord(word);
+                            return (
+                              <button
+                                key={wIdx}
+                                onClick={() => handleWordClick(word)}
+                                className={`hover:text-nvidia hover:scale-105 active:scale-95 transition-all outline-none cursor-pointer ${
+                                  cleaned && DICTIONARY[cleaned] ? "text-nvidia-neon border-b border-dashed border-nvidia-neon/40 font-bold" : ""
+                                }`}
+                              >
+                                {word}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      {/* Chinese translation line */}
+                      <div>
+                        <span className="text-[10px] font-mono font-bold text-amber-400 tracking-wider uppercase">中</span>
+                        {item.zh ? (
+                          <p className={`text-sm leading-relaxed ${isActive ? "text-amber-200" : "text-slate-300"}`}>
+                            {item.zh}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-slate-600 italic">翻譯無法取得</p>
+                        )}
+                      </div>
+                    </div>
                     {/* Loop button */}
                     <button
                       onClick={() => loopItemIndex === idx ? onClearLoop() : onSetLoop(item, idx)}

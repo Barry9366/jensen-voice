@@ -10,27 +10,26 @@ export interface TranscriptItem {
 
 // Batch-translate English text to Traditional Chinese via MyMemory free API
 // MyMemory free tier: ~1000 words/day, max 500 chars per request
-async function translateBatch(texts: string[]): Promise<string[]> {
+async function translateBatch(texts: string[]): Promise<(string | null)[]> {
   const query = texts.join(" ||| ");
-  if (!query.trim()) return texts;
+  if (!query.trim()) return texts.map(() => null);
 
   try {
     const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(query)}&langpair=en|zh-TW`;
     const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) return texts;
+    if (!res.ok) return texts.map(() => null);
 
     const data = await res.json();
     if (data.responseStatus === 200 && data.responseData?.translatedText) {
       const parts = (data.responseData.translatedText as string).split(" ||| ");
-      // Only use result if split count matches (translation preserved separators)
       if (parts.length === texts.length) {
         return parts.map((p: string) => p.trim());
       }
     }
   } catch {
-    // Network error or timeout — return originals
+    // Network error or timeout — return nulls
   }
-  return texts;
+  return texts.map(() => null);
 }
 
 // Group items into batches where total text length stays under maxChars
@@ -95,7 +94,7 @@ export async function GET(request: Request) {
     const texts = batch.map((idx) => limited[idx].text);
     const translated = await translateBatch(texts);
     batch.forEach((idx, i) => {
-      translations[idx] = translated[i] ?? limited[idx].text;
+      translations[idx] = translated[i] ?? "";
     });
   }
 
@@ -104,7 +103,7 @@ export async function GET(request: Request) {
     text: item.text,
     offset: item.offset,
     duration: item.duration,
-    zh: translations[i] || item.text,
+    zh: translations[i] || "",
   }));
 
   return NextResponse.json({
