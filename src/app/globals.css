@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+:root {
+  --background: #05070f;
+  --foreground: #f8fafc;
+}
+
+@theme {
+  --color-nvidia: #76b900;
+  --color-nvidia-neon: #39ff14;
+  --color-cyber-bg: #030408;
+  --color-cyber-card: #0b0d19;
+  --color-cyber-border: #1e293b;
+  
+  --animate-neon-pulse: neon-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  
+  @keyframes neon-pulse {
+    0%, 100% {
+      box-shadow: 0 0 8px rgba(118, 185, 0, 0.3);
+      border-color: rgba(118, 185, 0, 0.5);
+    }
+    50% {
+      box-shadow: 0 0 16px rgba(118, 185, 0, 0.6);
+      border-color: rgba(118, 185, 0, 0.9);
+    }
+  }
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), sans-serif;
+  overflow-x: hidden;
+}
+
+/* Custom scrollbar for cyber hacker look */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #030408;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #76b900;
+}
