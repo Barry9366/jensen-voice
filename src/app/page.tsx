@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { Terminal, Cpu, ShieldAlert, Sparkles, BookOpen } from "lucide-react";
 import VideoPlayer from "@/components/VideoPlayer";
 import BilingualTranscript from "@/components/BilingualTranscript";
-import RecordingSlots from "@/components/RecordingSlots";
+// RecordingSlots 暫時停用，元件已保留供日後啟用 (src/components/RecordingSlots.tsx)
 
 interface Sentence {
   en: string;
@@ -120,13 +120,7 @@ export default function Home() {
           />
         </section>
 
-        {/* SECTION 3: Recording & Cloud slots */}
-        <section id="recording-section">
-          <RecordingSlots
-            sentences={sentences}
-            selectedSentenceIndex={selectedSentenceIndex}
-          />
-        </section>
+        {/* SECTION 3: Recording & Cloud slots - 暫時停用，日後視需要啟用 */}
 
       </main>
 
@@ -135,9 +129,9 @@ export default function Home() {
         <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p>© 2026 Jensen Voice. Designed for Tech Innovators.</p>
           <div className="flex gap-4">
-            <span className="hover:text-nvidia transition-colors">Vercel Blob Storage Ready</span>
+            <span className="hover:text-nvidia transition-colors">Vercel Blob Storage</span>
             <span>•</span>
-            <span className="hover:text-nvidia transition-colors">Web Audio API</span>
+            <span className="hover:text-nvidia transition-colors">Bilingual Transcript</span>
             <span>•</span>
             <span className="hover:text-nvidia transition-colors">Tailwind CSS v4</span>
           </div>
