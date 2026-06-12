@@ -129,10 +129,10 @@ export default function BilingualTranscript({
   const isAutoMode = mode === "auto" && autoTranscript.length > 0;
 
   return (
-    <div className="w-full grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+    <div className="w-full flex flex-col gap-5">
 
-      {/* ── Left: Transcript / Sentences ── */}
-      <div className="lg:col-span-2 bg-cyber-card border border-cyber-border rounded-2xl p-6 shadow-2xl relative">
+      {/* ── Transcript / Sentences ── */}
+      <div className="bg-cyber-card border border-cyber-border rounded-2xl p-6 shadow-2xl relative">
         <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-nvidia to-transparent opacity-70"></div>
 
         {/* Header */}
@@ -308,8 +308,8 @@ export default function BilingualTranscript({
         )}
       </div>
 
-      {/* ── Right: Dictionary Card ── */}
-      <div className="bg-cyber-card border border-cyber-border rounded-2xl p-6 shadow-2xl relative h-full lg:min-h-[460px] flex flex-col">
+      {/* ── Dictionary Card ── */}
+      <div className="bg-cyber-card border border-cyber-border rounded-2xl p-6 shadow-2xl relative flex flex-col">
         <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-nvidia-neon to-transparent opacity-70"></div>
         <div className="border-b border-slate-800/80 pb-4 mb-4">
           <h2 className="text-md font-bold text-slate-100 tracking-wider font-mono flex items-center gap-2">

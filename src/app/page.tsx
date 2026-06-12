@@ -154,33 +154,38 @@ export default function Home() {
           </div>
         </section>
 
-        {/* SECTION 1: YouTube Player */}
-        <section id="player-section">
-          <VideoPlayer
-            videoId={videoId}
-            onVideoIdChange={setVideoId}
-            onTimeUpdate={handleTimeUpdate}
-            loopRange={loopRange}
-            onRepeat={handleRepeat}
-          />
-        </section>
+        {/* SECTION 1 + 2: Video & Transcript side-by-side */}
+        <div className="grid grid-cols-1 xl:grid-cols-[3fr_2fr] gap-6 items-start">
 
-        {/* SECTION 2: Bilingual Transcript + Dictionary */}
-        <section id="transcript-section">
-          <BilingualTranscript
-            sentences={sentences}
-            onSentencesChange={setSentences}
-            selectedSentenceIndex={selectedSentenceIndex}
-            onSelectSentenceIndex={setSelectedSentenceIndex}
-            autoTranscript={autoTranscript}
-            currentTime={currentTime}
-            isLoadingTranscript={isLoadingTranscript}
-            transcriptError={transcriptError}
-            loopItemIndex={loopItemIndex}
-            onSetLoop={handleSetLoop}
-            onClearLoop={handleClearLoop}
-          />
-        </section>
+          {/* Left: YouTube Player */}
+          <section id="player-section" className="min-w-0">
+            <VideoPlayer
+              videoId={videoId}
+              onVideoIdChange={setVideoId}
+              onTimeUpdate={handleTimeUpdate}
+              loopRange={loopRange}
+              onRepeat={handleRepeat}
+            />
+          </section>
+
+          {/* Right: Bilingual Transcript + Dictionary */}
+          <section id="transcript-section" className="min-w-0">
+            <BilingualTranscript
+              sentences={sentences}
+              onSentencesChange={setSentences}
+              selectedSentenceIndex={selectedSentenceIndex}
+              onSelectSentenceIndex={setSelectedSentenceIndex}
+              autoTranscript={autoTranscript}
+              currentTime={currentTime}
+              isLoadingTranscript={isLoadingTranscript}
+              transcriptError={transcriptError}
+              loopItemIndex={loopItemIndex}
+              onSetLoop={handleSetLoop}
+              onClearLoop={handleClearLoop}
+            />
+          </section>
+
+        </div>
 
         {/* SECTION 3: Recording - 暫時停用，日後視需要啟用 */}
 
