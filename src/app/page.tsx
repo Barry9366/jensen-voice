@@ -155,7 +155,7 @@ export default function Home() {
         </section>
 
         {/* SECTION 1 + 2: Video & Transcript side-by-side */}
-        <div className="grid grid-cols-1 xl:grid-cols-[3fr_2fr] gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-6 items-start">
 
           {/* Left: YouTube Player */}
           <section id="player-section" className="min-w-0">
