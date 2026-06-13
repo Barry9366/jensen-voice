@@ -1,10 +1,42 @@
 import { NextResponse } from "next/server";
 
-// Batch-translate English text to Traditional Chinese via MyMemory free API
-async function translateBatch(texts: string[]): Promise<(string | null)[]> {
+// Batch-translate English text to Traditional Chinese
+async function translateBatch(texts: string[], userApiKey: string | null): Promise<(string | null)[]> {
   const query = texts.join(" ||| ");
   if (!query.trim()) return texts.map(() => null);
 
+  const apiKey = userApiKey || process.env.GEMINI_API_KEY;
+
+  if (apiKey) {
+    try {
+      const { GoogleGenerativeAI } = require("@google/generative-ai");
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      
+      const prompt = `Translate the following English sentences into fluent Traditional Chinese (Taiwan). 
+Maintain the exact same number of sentences. 
+The sentences are separated by " ||| ".
+Return the translation separated by " ||| ".
+Do not add any additional text, notes, or formatting.
+
+English text:
+${query}`;
+
+      const result = await model.generateContent(prompt);
+      const translatedText = result.response.text();
+      
+      if (translatedText) {
+        const parts = translatedText.split(" ||| ");
+        if (parts.length === texts.length) {
+          return parts.map((p: string) => p.trim());
+        }
+      }
+    } catch (err) {
+      console.error("Gemini translation failed, falling back to MyMemory", err);
+    }
+  }
+
+  // Fallback to MyMemory
   try {
     const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(query)}&langpair=en|zh-TW`;
     const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
@@ -18,7 +50,7 @@ async function translateBatch(texts: string[]): Promise<(string | null)[]> {
       }
     }
   } catch {
-    // Network error or timeout — return nulls
+    // Network error or timeout
   }
   return texts.map(() => null);
 }
@@ -48,6 +80,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { text } = body;
+    const userApiKey = request.headers.get("x-gemini-api-key");
 
     if (!text || typeof text !== "string") {
       return NextResponse.json(
@@ -83,7 +116,7 @@ export async function POST(request: Request) {
 
     for (const batch of batches) {
       const texts = batch.map((idx) => limitedSentences[idx]);
-      const translated = await translateBatch(texts);
+      const translated = await translateBatch(texts, userApiKey);
       batch.forEach((idx, i) => {
         translations[idx] = translated[i] ?? "";
       });

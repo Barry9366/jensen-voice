@@ -195,9 +195,13 @@ export default function BilingualTranscript({
     setIsGeneratingAi(true);
     setAiError("");
     try {
+      const apiKey = localStorage.getItem("gemini_api_key") || "";
       const res = await fetch("/api/translate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "x-gemini-api-key": apiKey
+        },
         body: JSON.stringify({ text: aiInput }),
       });
       const data = await res.json();
