@@ -133,22 +133,38 @@ async function processTranscriptWithTranslation(rawTranscript: any[], isAiGenera
 import os from 'os';
 import path from 'path';
 
-// Helper to get yt-dlp instance (downloads binary on Vercel)
+// Helper to get yt-dlp instance (downloads binary to /tmp if needed)
 async function getYtDlpInstance() {
   const youtubedl = require('youtube-dl-exec');
-  if (process.env.VERCEL) {
-    const ytDlpPath = path.join(os.tmpdir(), 'yt-dlp');
-    if (!fs.existsSync(ytDlpPath)) {
-      console.log("Downloading yt-dlp binary to /tmp...");
-      const res = await fetch('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp');
-      const buffer = await res.arrayBuffer();
-      fs.writeFileSync(ytDlpPath, Buffer.from(buffer));
-      fs.chmodSync(ytDlpPath, 0o755);
-      console.log("yt-dlp downloaded and executable");
-    }
-    return youtubedl.create(ytDlpPath);
+  
+  // check if default binary exists
+  let defaultBin = '';
+  try {
+    defaultBin = require('youtube-dl-exec/src/constants').YOUTUBE_DL_PATH;
+  } catch(e) {}
+  
+  if (defaultBin && fs.existsSync(defaultBin)) {
+    return youtubedl;
   }
-  return youtubedl;
+
+  // Fallback for Vercel or any environment where binary is missing
+  const ytDlpPath = path.join(os.tmpdir(), 'yt-dlp_bin');
+  if (!fs.existsSync(ytDlpPath)) {
+    console.log("Default yt-dlp missing. Downloading binary to /tmp...");
+    const isWindows = os.platform() === 'win32';
+    const binaryUrl = isWindows 
+      ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
+      : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
+      
+    const res = await fetch(binaryUrl);
+    const buffer = await res.arrayBuffer();
+    fs.writeFileSync(ytDlpPath, Buffer.from(buffer));
+    if (!isWindows) {
+      fs.chmodSync(ytDlpPath, 0o755);
+    }
+    console.log("yt-dlp downloaded and executable");
+  }
+  return youtubedl.create(ytDlpPath);
 }
 
 // Helper to get subtitles using yt-dlp
@@ -320,10 +336,10 @@ export async function GET(request: Request) {
         isAiGenerated = true;
       } catch (err: any) {
         console.error("AI Generation failed:", err);
-        const errMsg = err?.message || err?.toString() || JSON.stringify(err) || "Unknown Error";
-        const ytErrMsg = ytErr?.message || ytErr?.toString() || "Unknown yt-dlp error";
+        const errStr = typeof err === 'object' ? JSON.stringify(err, Object.getOwnPropertyNames(err)) : String(err);
+        const ytErrStr = typeof ytErr === 'object' ? JSON.stringify(ytErr, Object.getOwnPropertyNames(ytErr)) : String(ytErr);
         return NextResponse.json(
-          { error: "no_captions", message: `抓取字幕失敗 (YT-DLP: ${ytErrMsg})，且 AI 生成也失敗 (AI: ${errMsg})` },
+          { error: "no_captions", message: `抓取字幕失敗 (YT: ${ytErrStr.substring(0,200)})，且 AI 生成也失敗 (AI: ${errStr.substring(0,200)})` },
           { status: 404 }
         );
       }
