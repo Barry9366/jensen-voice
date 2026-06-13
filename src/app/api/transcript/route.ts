@@ -212,15 +212,30 @@ async function getSubtitlesWithYtDlp(videoId: string) {
   const data = await res.json();
 
   const transcript: any[] = [];
+  for (const event of data.events || []) {
+    if (!event.segs) continue;
+    const text = event.segs.map((s: any) => s.utf8).join("").replace(/\\n/g, ' ').trim();
+    if (!text || text === "\\n") continue;
+    transcript.push({
+      text,
+      offset: event.tStartMs,
+      duration: event.dDurationMs || 0,
+    });
+  }
+  return transcript;
+}
+
+// ── Universal Transcript Cleaner & Deduplicator ───────────────────────
+function cleanAndDeduplicateTranscript(rawItems: any[]) {
+  const transcript: any[] = [];
   let currentSentence = "";
   let currentStart = 0;
   let currentDuration = 0;
   let lastRawText = "";
 
-  for (const event of data.events || []) {
-    if (!event.segs) continue;
-    const rawText = event.segs.map((s: any) => s.utf8).join("").replace(/\\n/g, ' ').trim();
-    if (!rawText || rawText === "\\n") continue;
+  for (const item of rawItems) {
+    const rawText = item.text.replace(/\\n/g, ' ').trim();
+    if (!rawText) continue;
     
     // Extract only the new words from the rolling sliding window
     const newWords = (function getNewWords(str1: string, str2: string) {
@@ -240,11 +255,11 @@ async function getSubtitlesWithYtDlp(videoId: string) {
     if (newWords) {
       if (!currentSentence) {
         currentSentence = newWords;
-        currentStart = event.tStartMs;
-        currentDuration = event.dDurationMs || 0;
+        currentStart = item.offset;
+        currentDuration = item.duration;
       } else {
         currentSentence += (currentSentence.endsWith(" ") ? "" : " ") + newWords;
-        currentDuration = event.tStartMs + (event.dDurationMs || 0) - currentStart;
+        currentDuration = item.offset + item.duration - currentStart;
       }
       
       // If sentence ends with punctuation or exceeds 6 seconds, flush it
@@ -453,6 +468,9 @@ export async function GET(request: Request) {
       }
     }
   }
+
+  // Apply universal deduplication and sentence chunking
+  rawTranscript = cleanAndDeduplicateTranscript(rawTranscript);
 
   // 3. TRANSLATE & FORMAT
   const finalData = await processTranscriptWithTranslation(rawTranscript, isAiGenerated, userApiKey);
