@@ -23,6 +23,28 @@ function getCachePath(videoId: string) {
   return path.join(CACHE_DIR, `${videoId}.json`);
 }
 
+let activeModelName: string | null = null;
+
+async function getGenerativeModel(genAI: any) {
+  if (activeModelName) {
+    return genAI.getGenerativeModel({ model: activeModelName });
+  }
+  const models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash"];
+  for (const name of models) {
+    try {
+      const model = genAI.getGenerativeModel({ model: name });
+      await model.generateContent("say ok");
+      activeModelName = name;
+      console.log(`[gemini] Selected model: ${name}`);
+      return model;
+    } catch (err: any) {
+      console.warn(`[gemini] Probe model ${name} failed: ${err.message || err}`);
+    }
+  }
+  activeModelName = "gemini-2.5-flash";
+  return genAI.getGenerativeModel({ model: activeModelName });
+}
+
 // Batch-translate English text to Traditional Chinese
 async function translateBatch(texts: string[], userApiKey: string | null): Promise<(string | null)[]> {
   const query = texts.join(" ||| ");
@@ -34,7 +56,7 @@ async function translateBatch(texts: string[], userApiKey: string | null): Promi
     try {
       const { GoogleGenerativeAI } = require("@google/generative-ai");
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = await getGenerativeModel(genAI);
       
       const prompt = `Translate the following English sentences into fluent Traditional Chinese (Taiwan). 
 Maintain the exact same number of sentences. 
@@ -51,7 +73,7 @@ ${query}`;
       translatedText = translatedText.replace(/^```.*?\n/m, '').replace(/```$/m, '').trim();
       
       if (translatedText) {
-        let parts = translatedText.split(" ||| ");
+        let parts = translatedText.split(/\s*\|\|\|\s*/);
         if (parts.length === texts.length) {
           return parts.map((p: string) => p.trim());
         } else {
@@ -84,7 +106,7 @@ ${query}`;
 
     const data = await res.json();
     if (data.responseStatus === 200 && data.responseData?.translatedText) {
-      const parts = (data.responseData.translatedText as string).split(" ||| ");
+      const parts = (data.responseData.translatedText as string).split(/\s*\|\|\|\s*/);
       if (parts.length === texts.length) {
         return parts.map((p: string) => p.trim());
       }
@@ -356,7 +378,7 @@ async function generateTranscriptWithAI(videoId: string, userApiKey: string | nu
         displayName: `Audio ${videoId}`,
       });
 
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = await getGenerativeModel(genAI);
         const prompt = `You are a professional transcriptionist. Listen to the audio and provide a complete transcript. 
 You MUST output ONLY a valid JSON array of objects. Do not wrap it in markdown code blocks.
 Each object must have exactly these three fields:
