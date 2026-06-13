@@ -14,7 +14,7 @@ export interface TranscriptItem {
 }
 
 // Ensure cache directory exists (use /tmp for serverless compatibility)
-const CACHE_DIR = path.join(os.tmpdir(), "jensen_voice_transcripts");
+const CACHE_DIR = path.join(os.tmpdir(), "jensen_voice_transcripts_v3");
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
 }
