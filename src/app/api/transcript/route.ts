@@ -130,8 +130,7 @@ async function processTranscriptWithTranslation(rawTranscript: any[], isAiGenera
   };
 }
 
-import os from 'os';
-import path from 'path';
+// removed duplicate imports
 
 // Helper to get yt-dlp instance (downloads binary to /tmp if needed)
 async function getYtDlpInstance() {
