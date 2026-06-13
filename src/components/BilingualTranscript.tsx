@@ -37,6 +37,7 @@ interface BilingualTranscriptProps {
   onSeek: (time: number) => void;
   onManualFetch?: () => void;
   onImportTranscript?: (transcript: TranscriptItem[]) => void;
+  videoId?: string;
 }
 
 // ── Mock dictionary ─────────────────────────────────────────────────────────
@@ -66,7 +67,7 @@ export default function BilingualTranscript({
   sentences, onSentencesChange, selectedSentenceIndex, onSelectSentenceIndex,
   autoTranscript, currentTime, isLoadingTranscript, transcriptError, isAiGenerated,
   loopItemIndex, onSetLoop, onClearLoop,
-  onSeek, onManualFetch, onImportTranscript
+  onSeek, onManualFetch, onImportTranscript, videoId
 }: BilingualTranscriptProps) {
   const [clickedWord, setClickedWord] = useState<string | null>(null);
   const [wordDef, setWordDef] = useState<{ definition: string; pos: string; detail: string } | null>(null);
@@ -188,6 +189,20 @@ export default function BilingualTranscript({
       .catch((err) => {
         console.error("Failed to copy transcript:", err);
       });
+  };
+
+  const handleExportJson = () => {
+    if (autoTranscript.length === 0) return;
+    const jsonStr = JSON.stringify({ transcript: autoTranscript }, null, 2);
+    const blob = new Blob([jsonStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${videoId || "video"}_transcript.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const handleGenerateAiSentences = async () => {
@@ -338,6 +353,17 @@ export default function BilingualTranscript({
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                 <span className="text-[10px] font-mono hidden sm:inline">IMPORT JSON</span>
+              </button>
+            )}
+
+            {isAutoMode && (
+              <button
+                onClick={handleExportJson}
+                title="下載中英對照 JSON 字幕檔到本地"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-900/50 hover:bg-slate-800 hover:border-nvidia/40 text-xs text-slate-300 hover:text-white transition-all cursor-pointer"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                <span className="text-[10px] font-mono hidden sm:inline">EXPORT JSON</span>
               </button>
             )}
 

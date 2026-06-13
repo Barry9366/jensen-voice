@@ -74,6 +74,25 @@ export default function Home() {
     setRepeatCount(0);
     setIsLoadingTranscript(true);
 
+    // 1. Check browser local storage cache
+    const cacheKey = `jensen_transcript_cache_${videoId}`;
+    try {
+      const localCached = localStorage.getItem(cacheKey);
+      if (localCached) {
+        const cachedData = JSON.parse(localCached);
+        if (cachedData.transcript && Array.isArray(cachedData.transcript)) {
+          console.log(`[localCache] Loaded transcript for ${videoId} from browser localStorage`);
+          setAutoTranscript(cachedData.transcript);
+          setIsAiGenerated(cachedData.isAiGenerated || false);
+          setIsLoadingTranscript(false);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to read transcript from localStorage:", e);
+    }
+
+    // 2. Fetch from server if not in browser cache
     fetch(`/api/transcript?videoId=${videoId}`, {
       headers: {
         "x-gemini-api-key": userApiKey
@@ -91,6 +110,16 @@ export default function Home() {
           setTranscriptError(""); // Clear any lingering errors just in case
           setAutoTranscript(data.transcript || []);
           setIsAiGenerated(data.isAiGenerated || false);
+
+          // Save to browser local storage cache
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify({
+              transcript: data.transcript || [],
+              isAiGenerated: data.isAiGenerated || false
+            }));
+          } catch (e) {
+            console.warn("Failed to write transcript to localStorage:", e);
+          }
         }
       })
       .catch(() => {
@@ -138,7 +167,17 @@ export default function Home() {
     setAutoTranscript(transcript);
     setIsAiGenerated(false); // Can be overridden if needed
     setTranscriptError("");
-  }, []);
+
+    // Save imported transcript to local browser storage cache
+    try {
+      localStorage.setItem(`jensen_transcript_cache_${videoId}`, JSON.stringify({
+        transcript,
+        isAiGenerated: false
+      }));
+    } catch (e) {
+      console.warn("Failed to write imported transcript to localStorage:", e);
+    }
+  }, [videoId]);
 
   const handleSeekComplete = useCallback(() => {
     setSeekTime(null);
@@ -261,6 +300,7 @@ export default function Home() {
               onSeek={handleSeek}
               onManualFetch={fetchTranscript}
               onImportTranscript={handleImportTranscript}
+              videoId={videoId}
             />
           </section>
 
