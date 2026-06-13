@@ -20,7 +20,7 @@ const DEFAULT_SENTENCES: Sentence[] = [
 ];
 
 export default function Home() {
-  const [videoId, setVideoId] = useState("q_HhB8jA30o"); // Jensen NTU commencement
+  const [videoId, setVideoId] = useState("Sc48ToLIQAY"); // Jensen Computex or similar working video
   const [currentTime, setCurrentTime] = useState(0);
   const [sentences, setSentences] = useState<Sentence[]>(DEFAULT_SENTENCES);
   const [selectedSentenceIndex, setSelectedSentenceIndex] = useState(0);
@@ -55,9 +55,14 @@ export default function Home() {
   // Video seeking state
   const [seekTime, setSeekTime] = useState<number | null>(null);
 
+  // Track latest fetch to prevent race conditions
+  const currentFetchIdRef = React.useRef(0);
+
   // Fetch transcript logic
   const fetchTranscript = useCallback(() => {
     if (!videoId) return;
+
+    const fetchId = ++currentFetchIdRef.current;
 
     setAutoTranscript([]);
     setTranscriptError("");
@@ -76,17 +81,27 @@ export default function Home() {
     })
       .then((res) => res.json())
       .then((data) => {
+        if (fetchId !== currentFetchIdRef.current) return; // Ignore outdated fetch
+
         if (data.error) {
           setTranscriptError(data.message || "無法取得此影片的字幕");
           setAutoTranscript([]);
           setIsAiGenerated(false);
         } else {
+          setTranscriptError(""); // Clear any lingering errors just in case
           setAutoTranscript(data.transcript || []);
           setIsAiGenerated(data.isAiGenerated || false);
         }
       })
-      .catch(() => setTranscriptError("網路錯誤，無法取得字幕"))
-      .finally(() => setIsLoadingTranscript(false));
+      .catch(() => {
+        if (fetchId !== currentFetchIdRef.current) return;
+        setTranscriptError("網路錯誤，無法取得字幕");
+      })
+      .finally(() => {
+        if (fetchId === currentFetchIdRef.current) {
+          setIsLoadingTranscript(false);
+        }
+      });
   }, [videoId, userApiKey]);
 
   // Auto-fetch when videoId changes
