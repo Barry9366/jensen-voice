@@ -202,10 +202,22 @@ async function getSubtitlesWithYtDlp(videoId: string) {
     throw new Error("No subtitles found via yt-dlp");
   }
 
-  // Prefer srv1 (clean XML, no rolling duplicates) over json3
-  const srv1Entry = subs.find((s: any) => s.ext === 'srv1');
-  if (srv1Entry?.url) {
-    const res = await fetch(srv1Entry.url);
+  console.log(`[yt-dlp] Available subtitle formats: ${subs.map((s: any) => s.ext).join(', ')}`);
+
+  // Find any subtitle URL we can use as a base
+  const baseEntry = subs.find((s: any) => s.url);
+  if (!baseEntry?.url) {
+    throw new Error("No subtitle URL found in yt-dlp data");
+  }
+
+  // Try srv1 format first (clean XML, no rolling duplicates)
+  // Method 1: Look for srv1 entry directly
+  // Method 2: Derive srv1 URL by changing format parameter in any existing URL
+  const srv1Url = baseEntry.url.replace(/fmt=[a-z0-9]+/gi, 'fmt=srv1');
+  console.log(`[yt-dlp] Trying srv1 URL (derived from ${baseEntry.ext})`);
+
+  try {
+    const res = await fetch(srv1Url);
     if (res.ok) {
       const xmlText = await res.text();
       const transcript: any[] = [];
@@ -229,11 +241,17 @@ async function getSubtitlesWithYtDlp(videoId: string) {
           transcript.push({ text, offset: start, duration: dur });
         }
       }
+      console.log(`[yt-dlp] srv1 parsed ${transcript.length} items`);
       if (transcript.length > 0) return transcript;
+    } else {
+      console.log(`[yt-dlp] srv1 fetch failed: ${res.status}`);
     }
+  } catch (e: any) {
+    console.log(`[yt-dlp] srv1 error: ${e.message}`);
   }
 
   // Fallback to json3 if srv1 unavailable
+  console.log("[yt-dlp] Falling back to json3");
   const json3Entry = subs.find((s: any) => s.ext === 'json3');
   if (!json3Entry?.url) {
     throw new Error("No subtitle format found (tried srv1, json3)");
@@ -263,6 +281,7 @@ async function getSubtitlesWithYtDlp(videoId: string) {
     }
     transcript.push(rawEvents[i]);
   }
+  console.log(`[yt-dlp] json3 parsed ${rawEvents.length} raw -> ${transcript.length} deduped`);
   return transcript;
 }
 
@@ -425,10 +444,13 @@ export async function GET(request: Request) {
     // Try YouTube CC first
     try {
       rawTranscript = await YoutubeTranscript.fetchTranscript(videoId, { lang: "en" });
+      console.log(`[transcript] YoutubeTranscript (en) returned ${rawTranscript.length} items`);
     } catch {
       rawTranscript = await YoutubeTranscript.fetchTranscript(videoId);
+      console.log(`[transcript] YoutubeTranscript (any) returned ${rawTranscript.length} items`);
     }
-  } catch {
+  } catch (ccErr: any) {
+    console.log(`[transcript] YoutubeTranscript failed: ${ccErr.message?.substring(0, 100)}`);
     // YouTube CC failed -> Try yt-dlp for subtitles first
     try {
       rawTranscript = await getSubtitlesWithYtDlp(videoId);
@@ -457,6 +479,8 @@ export async function GET(request: Request) {
       }
     }
   }
+
+  console.log(`[transcript] Final raw transcript: ${rawTranscript.length} items, first: "${rawTranscript[0]?.text?.substring(0, 80)}"`);
 
   // 3. TRANSLATE & FORMAT
   const finalData = await processTranscriptWithTranslation(rawTranscript, isAiGenerated, userApiKey);
