@@ -147,13 +147,13 @@ async function getYtDlpInstance() {
   }
 
   // Fallback for Vercel or any environment where binary is missing
-  const ytDlpPath = path.join(os.tmpdir(), 'yt-dlp_bin');
+  const ytDlpPath = path.join(os.tmpdir(), 'yt-dlp_linux_bin');
   if (!fs.existsSync(ytDlpPath)) {
     console.log("Default yt-dlp missing. Downloading binary to /tmp...");
     const isWindows = os.platform() === 'win32';
     const binaryUrl = isWindows 
       ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
-      : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
+      : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux';
       
     const res = await fetch(binaryUrl);
     const buffer = await res.arrayBuffer();
