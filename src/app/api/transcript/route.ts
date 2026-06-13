@@ -14,7 +14,7 @@ export interface TranscriptItem {
 }
 
 // Ensure cache directory exists (use /tmp for serverless compatibility)
-const CACHE_DIR = path.join(os.tmpdir(), "jensen_voice_transcripts_v3");
+const CACHE_DIR = path.join(os.tmpdir(), "jensen_voice_transcripts_v4");
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
 }
@@ -202,15 +202,48 @@ async function getSubtitlesWithYtDlp(videoId: string) {
     throw new Error("No subtitles found via yt-dlp");
   }
 
-  const json3Url = subs.find((s: any) => s.ext === 'json3')?.url;
-  if (!json3Url) {
-    throw new Error("No json3 subtitle format found");
+  // Prefer srv1 (clean XML, no rolling duplicates) over json3
+  const srv1Entry = subs.find((s: any) => s.ext === 'srv1');
+  if (srv1Entry?.url) {
+    const res = await fetch(srv1Entry.url);
+    if (res.ok) {
+      const xmlText = await res.text();
+      const transcript: any[] = [];
+      // Parse srv1 XML: <text start="0" dur="4.5">Hello world.</text>
+      const regex = /<text[^>]+start="([^"]+)"[^>]+dur="([^"]+)"[^>]*>([\s\S]*?)<\/text>/g;
+      let match;
+      while ((match = regex.exec(xmlText)) !== null) {
+        const start = parseFloat(match[1]) * 1000;
+        const dur = parseFloat(match[2]) * 1000;
+        // Decode HTML entities and strip tags
+        const text = match[3]
+          .replace(/<[^>]+>/g, '')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/\n/g, ' ')
+          .trim();
+        if (text) {
+          transcript.push({ text, offset: start, duration: dur });
+        }
+      }
+      if (transcript.length > 0) return transcript;
+    }
   }
 
-  const res = await fetch(json3Url);
+  // Fallback to json3 if srv1 unavailable
+  const json3Entry = subs.find((s: any) => s.ext === 'json3');
+  if (!json3Entry?.url) {
+    throw new Error("No subtitle format found (tried srv1, json3)");
+  }
+
+  const res = await fetch(json3Entry.url);
   if (!res.ok) throw new Error("Failed to fetch json3 subtitle");
   const data = await res.json();
 
+  // For json3, keep only the last event in each prefix chain
   const rawEvents: any[] = [];
   for (const event of data.events || []) {
     if (!event.segs) continue;
@@ -223,18 +256,10 @@ async function getSubtitlesWithYtDlp(videoId: string) {
     });
   }
 
-  // Deduplicate rolling auto-captions (json3 specific)
-  // YouTube auto-captions accumulate: "Hello" → "Hello world" → "Hello world."
-  // We only keep the last (longest) item in each prefix chain.
   const transcript: any[] = [];
   for (let i = 0; i < rawEvents.length; i++) {
-    const curr = rawEvents[i].text;
-    // If the NEXT event starts with this event's text, skip this one (it's a partial)
-    if (i + 1 < rawEvents.length) {
-      const next = rawEvents[i + 1].text;
-      if (next.startsWith(curr)) {
-        continue;
-      }
+    if (i + 1 < rawEvents.length && rawEvents[i + 1].text.startsWith(rawEvents[i].text)) {
+      continue;
     }
     transcript.push(rawEvents[i]);
   }
