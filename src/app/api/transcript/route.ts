@@ -48,7 +48,7 @@ ${query}`;
       const result = await model.generateContent(prompt);
       let translatedText = result.response.text();
       // Sometimes Gemini adds markdown code blocks
-      translatedText = translatedText.replace(/^```.*?\\n/m, '').replace(/```$/m, '').trim();
+      translatedText = translatedText.replace(/^```.*?\n/m, '').replace(/```$/m, '').trim();
       
       if (translatedText) {
         let parts = translatedText.split(" ||| ");
@@ -60,9 +60,9 @@ ${query}`;
           const individualResults = [];
           for (const text of texts) {
             try {
-               const res = await model.generateContent(`Translate the following to fluent Traditional Chinese (Taiwan), return ONLY the translation:\\n${text}`);
+               const res = await model.generateContent(`Translate the following to fluent Traditional Chinese (Taiwan), return ONLY the translation:\n${text}`);
                let singleText = res.response.text().trim();
-               singleText = singleText.replace(/^```.*?\\n/m, '').replace(/```$/m, '').trim();
+               singleText = singleText.replace(/^```.*?\n/m, '').replace(/```$/m, '').trim();
                individualResults.push(singleText);
             } catch {
                individualResults.push(null);
@@ -214,8 +214,8 @@ async function getSubtitlesWithYtDlp(videoId: string) {
   const transcript: any[] = [];
   for (const event of data.events || []) {
     if (!event.segs) continue;
-    const text = event.segs.map((s: any) => s.utf8).join("").replace(/\\n/g, ' ').trim();
-    if (!text || text === "\\n") continue;
+    const text = event.segs.map((s: any) => s.utf8).join("").replace(/\n/g, ' ').trim();
+    if (!text) continue;
     transcript.push({
       text,
       offset: event.tStartMs,
@@ -234,7 +234,7 @@ function cleanAndDeduplicateTranscript(rawItems: any[]) {
   let lastRawText = "";
 
   for (const item of rawItems) {
-    const rawText = item.text.replace(/\\n/g, ' ').trim();
+    const rawText = item.text.replace(/\n/g, ' ').trim();
     if (!rawText) continue;
     
     // Extract only the new words from the rolling sliding window
@@ -418,11 +418,20 @@ export async function GET(request: Request) {
 
   const cachePath = getCachePath(videoId);
 
-  // 1. CHECK CACHE
+  // 1. CHECK CACHE (validate it has non-empty translations)
   if (fs.existsSync(cachePath)) {
     try {
       const cachedData = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
-      return NextResponse.json(cachedData);
+      const items = cachedData.transcript || [];
+      const hasTranslations = items.length > 0 && items.filter((t: any) => t.zh).length > items.length * 0.3;
+      const hasDuplicates = items.length > 0 && items.some((t: any) => t.text && t.text.length > 300);
+      if (hasTranslations && !hasDuplicates) {
+        return NextResponse.json(cachedData);
+      } else {
+        // Stale or dirty cache — delete and re-fetch
+        fs.unlinkSync(cachePath);
+        console.log(`Invalidated stale cache for ${videoId}`);
+      }
     } catch {
       // Failed to read cache, proceed to fetch
     }
