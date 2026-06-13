@@ -208,6 +208,40 @@ async function getSubtitlesWithYtDlp(videoId: string) {
   return transcript;
 }
 
+// ── Foolproof Fallback using youtube-transcript.ai ────────────────────────
+async function fetchTranscriptFallback(videoId: string) {
+  const res = await fetch(`https://youtube-transcript.ai/transcript/${videoId}.txt`);
+  if (!res.ok) throw new Error("Fallback API returned " + res.status);
+  const text = await res.text();
+
+  const transcript: any[] = [];
+  const lines = text.split('\n');
+  for (const line of lines) {
+    const match = line.match(/^\[(?:(\d+):)?(\d+):(\d+)\]\s+(.*)/);
+    if (match) {
+      const hours = match[1] ? parseInt(match[1]) : 0;
+      const mins = parseInt(match[2]);
+      const secs = parseInt(match[3]);
+      const offset = (hours * 3600 + mins * 60 + secs) * 1000;
+      transcript.push({
+        text: match[4].trim(),
+        offset,
+        duration: 5000
+      });
+    }
+  }
+
+  for (let i = 0; i < transcript.length - 1; i++) {
+    transcript[i].duration = Math.max(1000, transcript[i+1].offset - transcript[i].offset);
+  }
+
+  if (transcript.length === 0) {
+    throw new Error("No valid sentences parsed from fallback");
+  }
+
+  return transcript;
+}
+
 // AI Gemini Fallback logic
 async function generateTranscriptWithAI(videoId: string, userApiKey: string | null) {
   const apiKey = userApiKey || process.env.GEMINI_API_KEY;
@@ -337,12 +371,20 @@ export async function GET(request: Request) {
         isAiGenerated = true;
       } catch (err: any) {
         console.error("AI Generation failed:", err);
-        const errStr = typeof err === 'object' ? JSON.stringify(err, Object.getOwnPropertyNames(err)) : String(err);
-        const ytErrStr = typeof ytErr === 'object' ? JSON.stringify(ytErr, Object.getOwnPropertyNames(ytErr)) : String(ytErr);
-        return NextResponse.json(
-          { error: "no_captions", message: `抓取字幕失敗 (YT: ${ytErrStr.substring(0,200)})，且 AI 生成也失敗 (AI: ${errStr.substring(0,200)})` },
-          { status: 404 }
-        );
+        // EVERYTHING FAILED -> Try the foolproof fallback text API
+        try {
+          console.log("Both yt-dlp and AI failed, attempting foolproof fallback API...");
+          rawTranscript = await fetchTranscriptFallback(videoId);
+          isAiGenerated = true; // Still requires translation, so we treat it similar
+        } catch (fallbackErr: any) {
+          console.error("Fallback API failed:", fallbackErr);
+          const errStr = typeof err === 'object' ? JSON.stringify(err, Object.getOwnPropertyNames(err)) : String(err);
+          const ytErrStr = typeof ytErr === 'object' ? JSON.stringify(ytErr, Object.getOwnPropertyNames(ytErr)) : String(ytErr);
+          return NextResponse.json(
+            { error: "no_captions", message: `抓取字幕失敗 (YT: ${ytErrStr.substring(0,100)})，且 AI 生成也失敗 (AI: ${errStr.substring(0,100)})` },
+            { status: 404 }
+          );
+        }
       }
     }
   }
