@@ -212,27 +212,64 @@ async function getSubtitlesWithYtDlp(videoId: string) {
   const data = await res.json();
 
   const transcript: any[] = [];
+  let currentSentence = "";
+  let currentStart = 0;
+  let currentDuration = 0;
+  let lastRawText = "";
+
   for (const event of data.events || []) {
     if (!event.segs) continue;
-    const text = event.segs.map((s: any) => s.utf8).join("").replace(/\\n/g, ' ').trim();
-    if (!text || text === "\\n") continue;
+    const rawText = event.segs.map((s: any) => s.utf8).join("").replace(/\\n/g, ' ').trim();
+    if (!rawText || rawText === "\\n") continue;
     
-    // Deduplicate rolling auto-captions (e.g. "hello" -> "hello world")
-    const lastItem = transcript.length > 0 ? transcript[transcript.length - 1] : null;
-    if (lastItem && (text.startsWith(lastItem.text) || lastItem.text.startsWith(text))) {
-      // Update last item instead of pushing duplicate
-      if (text.length > lastItem.text.length) {
-        lastItem.text = text;
+    // Extract only the new words from the rolling sliding window
+    const newWords = (function getNewWords(str1: string, str2: string) {
+      if (!str1) return str2;
+      if (!str2) return '';
+      if (str1.endsWith(str2)) return '';
+      if (str2.startsWith(str1)) return str2.slice(str1.length).trim();
+      let maxOverlap = 0;
+      for (let i = 1; i <= Math.min(str1.length, str2.length); i++) {
+        if (str1.slice(-i) === str2.slice(0, i)) maxOverlap = i;
       }
-      lastItem.duration = event.tStartMs + (event.dDurationMs || 0) - lastItem.offset;
-    } else {
-      transcript.push({
-        text,
-        offset: event.tStartMs,
-        duration: event.dDurationMs || 0,
-      });
+      return str2.slice(maxOverlap).trim();
+    })(lastRawText, rawText);
+
+    lastRawText = rawText;
+
+    if (newWords) {
+      if (!currentSentence) {
+        currentSentence = newWords;
+        currentStart = event.tStartMs;
+        currentDuration = event.dDurationMs || 0;
+      } else {
+        currentSentence += (currentSentence.endsWith(" ") ? "" : " ") + newWords;
+        currentDuration = event.tStartMs + (event.dDurationMs || 0) - currentStart;
+      }
+      
+      // If sentence ends with punctuation or exceeds 6 seconds, flush it
+      if (currentSentence.match(/[.!?]$/) || currentDuration > 6000) {
+        transcript.push({
+          text: currentSentence.trim(),
+          offset: currentStart,
+          duration: currentDuration
+        });
+        currentSentence = "";
+        currentStart = 0;
+        currentDuration = 0;
+      }
     }
   }
+
+  // Flush remaining
+  if (currentSentence) {
+    transcript.push({
+      text: currentSentence.trim(),
+      offset: currentStart,
+      duration: currentDuration
+    });
+  }
+  
   return transcript;
 }
 
