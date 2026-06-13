@@ -130,11 +130,32 @@ async function processTranscriptWithTranslation(rawTranscript: any[], isAiGenera
   };
 }
 
+import os from 'os';
+import path from 'path';
+
+// Helper to get yt-dlp instance (downloads binary on Vercel)
+async function getYtDlpInstance() {
+  const youtubedl = require('youtube-dl-exec');
+  if (process.env.VERCEL) {
+    const ytDlpPath = path.join(os.tmpdir(), 'yt-dlp');
+    if (!fs.existsSync(ytDlpPath)) {
+      console.log("Downloading yt-dlp binary to /tmp...");
+      const res = await fetch('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp');
+      const buffer = await res.arrayBuffer();
+      fs.writeFileSync(ytDlpPath, Buffer.from(buffer));
+      fs.chmodSync(ytDlpPath, 0o755);
+      console.log("yt-dlp downloaded and executable");
+    }
+    return youtubedl.create(ytDlpPath);
+  }
+  return youtubedl;
+}
+
 // Helper to get subtitles using yt-dlp
 async function getSubtitlesWithYtDlp(videoId: string) {
   const url = `https://www.youtube.com/watch?v=${videoId}`;
-  const youtubedl = require('youtube-dl-exec');
-  const info = await youtubedl(url, {
+  const yt = await getYtDlpInstance();
+  const info = await yt(url, {
     dumpSingleJson: true,
     writeAutoSubs: true,
     subLangs: 'en',
@@ -189,9 +210,8 @@ async function generateTranscriptWithAI(videoId: string, userApiKey: string | nu
     const tempFilePath = path.join(CACHE_DIR, `${videoId}_temp.mp3`);
 
     try {
-      // Use youtube-dl-exec instead of ytdl-core to bypass format restrictions
-      const youtubedl = require('youtube-dl-exec');
-      await youtubedl(url, {
+      const yt = await getYtDlpInstance();
+      await yt(url, {
         extractAudio: true,
         audioFormat: 'mp3',
         output: tempFilePath,
