@@ -177,6 +177,7 @@ async function getSubtitlesWithYtDlp(videoId: string) {
     skipDownload: true,
     noWarnings: true,
     noCheckCertificate: true,
+    extractorArgs: 'youtube:player_client=android', // Bypass bot protection
   });
 
   const subs = info.subtitles?.en || info.automatic_captions?.en;
@@ -233,6 +234,7 @@ async function generateTranscriptWithAI(videoId: string, userApiKey: string | nu
         noWarnings: true,
         noCheckCertificate: true,
         preferFreeFormats: true,
+        extractorArgs: 'youtube:player_client=android', // Bypass bot protection
       });
 
       // File is downloaded successfully, now upload to Gemini
