@@ -7,16 +7,22 @@ async function getGenerativeModel(genAI: any) {
     return genAI.getGenerativeModel({ model: activeModelName });
   }
   const models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash"];
-  for (const name of models) {
-    try {
-      const model = genAI.getGenerativeModel({ model: name });
-      await model.generateContent("say ok");
-      activeModelName = name;
-      console.log(`[gemini] Selected model: ${name}`);
-      return model;
-    } catch (err: any) {
-      console.warn(`[gemini] Probe model ${name} failed: ${err.message || err}`);
-    }
+  const results = await Promise.all(
+    models.map(async (name) => {
+      try {
+        const model = genAI.getGenerativeModel({ model: name });
+        await model.generateContent("say ok");
+        return name;
+      } catch {
+        return null;
+      }
+    })
+  );
+  const workingModel = results.find((r) => r !== null);
+  if (workingModel) {
+    activeModelName = workingModel;
+    console.log(`[gemini] Selected model: ${activeModelName}`);
+    return genAI.getGenerativeModel({ model: activeModelName });
   }
   activeModelName = "gemini-2.5-flash";
   return genAI.getGenerativeModel({ model: activeModelName });
@@ -78,7 +84,7 @@ ${query}`;
 }
 
 // Group items into batches where total text length stays under maxChars
-function groupIntoBatches(texts: string[], maxChars = 450): number[][] {
+function groupIntoBatches(texts: string[], maxChars = 3000): number[][] {
   const batches: number[][] = [];
   let current: number[] = [];
   let currentLen = 0;
@@ -136,13 +142,14 @@ export async function POST(request: Request) {
     const batches = groupIntoBatches(limitedSentences);
     const translations: string[] = new Array(limitedSentences.length).fill("");
 
-    for (const batch of batches) {
+    const batchPromises = batches.map(async (batch) => {
       const texts = batch.map((idx) => limitedSentences[idx]);
       const translated = await translateBatch(texts, userApiKey);
       batch.forEach((idx, i) => {
         translations[idx] = translated[i] ?? "";
       });
-    }
+    });
+    await Promise.all(batchPromises);
 
     // Combine EN + ZH
     const result = limitedSentences.map((en, i) => ({
