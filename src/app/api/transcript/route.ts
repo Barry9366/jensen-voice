@@ -214,13 +214,24 @@ async function getSubtitlesWithYtDlp(videoId: string) {
   const transcript: any[] = [];
   for (const event of data.events || []) {
     if (!event.segs) continue;
-    const text = event.segs.map((s: any) => s.utf8).join("").trim();
+    const text = event.segs.map((s: any) => s.utf8).join("").replace(/\\n/g, ' ').trim();
     if (!text || text === "\\n") continue;
-    transcript.push({
-      text,
-      offset: event.tStartMs,
-      duration: event.dDurationMs || 0,
-    });
+    
+    // Deduplicate rolling auto-captions (e.g. "hello" -> "hello world")
+    const lastItem = transcript.length > 0 ? transcript[transcript.length - 1] : null;
+    if (lastItem && (text.startsWith(lastItem.text) || lastItem.text.startsWith(text))) {
+      // Update last item instead of pushing duplicate
+      if (text.length > lastItem.text.length) {
+        lastItem.text = text;
+      }
+      lastItem.duration = event.tStartMs + (event.dDurationMs || 0) - lastItem.offset;
+    } else {
+      transcript.push({
+        text,
+        offset: event.tStartMs,
+        duration: event.dDurationMs || 0,
+      });
+    }
   }
   return transcript;
 }
@@ -409,8 +420,13 @@ export async function GET(request: Request) {
   // 3. TRANSLATE & FORMAT
   const finalData = await processTranscriptWithTranslation(rawTranscript, isAiGenerated, userApiKey);
 
-  // 4. SAVE TO CACHE
-  fs.writeFileSync(cachePath, JSON.stringify(finalData), "utf-8");
+  // 4. SAVE TO CACHE (Only if translations mostly succeeded)
+  const missingCount = finalData.transcript.filter(t => !t.zh).length;
+  if (finalData.transcript.length > 0 && missingCount < finalData.transcript.length * 0.5) {
+    fs.writeFileSync(cachePath, JSON.stringify(finalData), "utf-8");
+  } else {
+    console.warn(`Skipping cache: too many missing translations (${missingCount}/${finalData.transcript.length})`);
+  }
 
   return NextResponse.json(finalData);
 }
