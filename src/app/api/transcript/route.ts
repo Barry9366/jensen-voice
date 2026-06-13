@@ -130,6 +130,47 @@ async function processTranscriptWithTranslation(rawTranscript: any[], isAiGenera
   };
 }
 
+// Helper to get subtitles using yt-dlp
+async function getSubtitlesWithYtDlp(videoId: string) {
+  const url = `https://www.youtube.com/watch?v=${videoId}`;
+  const youtubedl = require('youtube-dl-exec');
+  const info = await youtubedl(url, {
+    dumpSingleJson: true,
+    writeAutoSubs: true,
+    subLangs: 'en',
+    skipDownload: true,
+    noWarnings: true,
+    noCheckCertificate: true,
+  });
+
+  const subs = info.subtitles?.en || info.automatic_captions?.en;
+  if (!subs || subs.length === 0) {
+    throw new Error("No subtitles found via yt-dlp");
+  }
+
+  const json3Url = subs.find((s: any) => s.ext === 'json3')?.url;
+  if (!json3Url) {
+    throw new Error("No json3 subtitle format found");
+  }
+
+  const res = await fetch(json3Url);
+  if (!res.ok) throw new Error("Failed to fetch json3 subtitle");
+  const data = await res.json();
+
+  const transcript: any[] = [];
+  for (const event of data.events || []) {
+    if (!event.segs) continue;
+    const text = event.segs.map((s: any) => s.utf8).join("").trim();
+    if (!text || text === "\\n") continue;
+    transcript.push({
+      text,
+      offset: event.tStartMs,
+      duration: event.dDurationMs || 0,
+    });
+  }
+  return transcript;
+}
+
 // AI Gemini Fallback logic
 async function generateTranscriptWithAI(videoId: string, userApiKey: string | null) {
   const apiKey = userApiKey || process.env.GEMINI_API_KEY;
@@ -248,16 +289,24 @@ export async function GET(request: Request) {
       rawTranscript = await YoutubeTranscript.fetchTranscript(videoId);
     }
   } catch {
-    // YouTube CC failed -> Fallback to Whisper AI
+    // YouTube CC failed -> Try yt-dlp for subtitles first
     try {
-      rawTranscript = await generateTranscriptWithAI(videoId, userApiKey);
-      isAiGenerated = true;
-    } catch (err: any) {
-      console.error("AI Generation failed:", err);
-      return NextResponse.json(
-        { error: "no_captions", message: `抓取字幕失敗，且 AI 生成也失敗 (${err.message})` },
-        { status: 404 }
-      );
+      rawTranscript = await getSubtitlesWithYtDlp(videoId);
+    } catch (ytErr: any) {
+      console.log("yt-dlp subtitles failed, falling back to AI audio extraction", ytErr);
+      // Both failed -> Fallback to Whisper/Gemini AI
+      try {
+        rawTranscript = await generateTranscriptWithAI(videoId, userApiKey);
+        isAiGenerated = true;
+      } catch (err: any) {
+        console.error("AI Generation failed:", err);
+        const errMsg = err?.message || err?.toString() || JSON.stringify(err) || "Unknown Error";
+        const ytErrMsg = ytErr?.message || ytErr?.toString() || "Unknown yt-dlp error";
+        return NextResponse.json(
+          { error: "no_captions", message: `抓取字幕失敗 (YT-DLP: ${ytErrMsg})，且 AI 生成也失敗 (AI: ${errMsg})` },
+          { status: 404 }
+        );
+      }
     }
   }
 
