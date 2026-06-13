@@ -46,12 +46,29 @@ English text:
 ${query}`;
 
       const result = await model.generateContent(prompt);
-      const translatedText = result.response.text();
+      let translatedText = result.response.text();
+      // Sometimes Gemini adds markdown code blocks
+      translatedText = translatedText.replace(/^```.*?\\n/m, '').replace(/```$/m, '').trim();
       
       if (translatedText) {
-        const parts = translatedText.split(" ||| ");
+        let parts = translatedText.split(" ||| ");
         if (parts.length === texts.length) {
           return parts.map((p: string) => p.trim());
+        } else {
+          // If mismatch, translate individually as a fallback
+          console.warn(`Translation mismatch: expected ${texts.length}, got ${parts.length}. Falling back to individual translation.`);
+          const individualResults = [];
+          for (const text of texts) {
+            try {
+               const res = await model.generateContent(`Translate the following to fluent Traditional Chinese (Taiwan), return ONLY the translation:\\n${text}`);
+               let singleText = res.response.text().trim();
+               singleText = singleText.replace(/^```.*?\\n/m, '').replace(/```$/m, '').trim();
+               individualResults.push(singleText);
+            } catch {
+               individualResults.push(null);
+            }
+          }
+          return individualResults;
         }
       }
     } catch (err) {
