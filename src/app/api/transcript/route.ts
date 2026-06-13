@@ -211,82 +211,37 @@ async function getSubtitlesWithYtDlp(videoId: string) {
   if (!res.ok) throw new Error("Failed to fetch json3 subtitle");
   const data = await res.json();
 
-  const transcript: any[] = [];
+  const rawEvents: any[] = [];
   for (const event of data.events || []) {
     if (!event.segs) continue;
     const text = event.segs.map((s: any) => s.utf8).join("").replace(/\n/g, ' ').trim();
     if (!text) continue;
-    transcript.push({
+    rawEvents.push({
       text,
       offset: event.tStartMs,
       duration: event.dDurationMs || 0,
     });
   }
-  return transcript;
-}
 
-// ── Universal Transcript Cleaner & Deduplicator ───────────────────────
-function cleanAndDeduplicateTranscript(rawItems: any[]) {
+  // Deduplicate rolling auto-captions (json3 specific)
+  // YouTube auto-captions accumulate: "Hello" → "Hello world" → "Hello world."
+  // We only keep the last (longest) item in each prefix chain.
   const transcript: any[] = [];
-  let currentSentence = "";
-  let currentStart = 0;
-  let currentDuration = 0;
-  let lastRawText = "";
-
-  for (const item of rawItems) {
-    const rawText = item.text.replace(/\n/g, ' ').trim();
-    if (!rawText) continue;
-    
-    // Extract only the new words from the rolling sliding window
-    const newWords = (function getNewWords(str1: string, str2: string) {
-      if (!str1) return str2;
-      if (!str2) return '';
-      if (str1.endsWith(str2)) return '';
-      if (str2.startsWith(str1)) return str2.slice(str1.length).trim();
-      let maxOverlap = 0;
-      for (let i = 1; i <= Math.min(str1.length, str2.length); i++) {
-        if (str1.slice(-i) === str2.slice(0, i)) maxOverlap = i;
-      }
-      return str2.slice(maxOverlap).trim();
-    })(lastRawText, rawText);
-
-    lastRawText = rawText;
-
-    if (newWords) {
-      if (!currentSentence) {
-        currentSentence = newWords;
-        currentStart = item.offset;
-        currentDuration = item.duration;
-      } else {
-        currentSentence += (currentSentence.endsWith(" ") ? "" : " ") + newWords;
-        currentDuration = item.offset + item.duration - currentStart;
-      }
-      
-      // If sentence ends with punctuation or exceeds 6 seconds, flush it
-      if (currentSentence.match(/[.!?]$/) || currentDuration > 6000) {
-        transcript.push({
-          text: currentSentence.trim(),
-          offset: currentStart,
-          duration: currentDuration
-        });
-        currentSentence = "";
-        currentStart = 0;
-        currentDuration = 0;
+  for (let i = 0; i < rawEvents.length; i++) {
+    const curr = rawEvents[i].text;
+    // If the NEXT event starts with this event's text, skip this one (it's a partial)
+    if (i + 1 < rawEvents.length) {
+      const next = rawEvents[i + 1].text;
+      if (next.startsWith(curr)) {
+        continue;
       }
     }
+    transcript.push(rawEvents[i]);
   }
-
-  // Flush remaining
-  if (currentSentence) {
-    transcript.push({
-      text: currentSentence.trim(),
-      offset: currentStart,
-      duration: currentDuration
-    });
-  }
-  
   return transcript;
 }
+
+
 
 // ── Foolproof Fallback using youtube-transcript.ai ────────────────────────
 async function fetchTranscriptFallback(videoId: string) {
@@ -477,9 +432,6 @@ export async function GET(request: Request) {
       }
     }
   }
-
-  // Apply universal deduplication and sentence chunking
-  rawTranscript = cleanAndDeduplicateTranscript(rawTranscript);
 
   // 3. TRANSLATE & FORMAT
   const finalData = await processTranscriptWithTranslation(rawTranscript, isAiGenerated, userApiKey);
