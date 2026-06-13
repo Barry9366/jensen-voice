@@ -1,6 +1,5 @@
 import { YoutubeTranscript } from "youtube-transcript";
 import { NextResponse } from "next/server";
-import ytdl from "@distube/ytdl-core";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -144,22 +143,27 @@ async function generateTranscriptWithAI(videoId: string, userApiKey: string | nu
   const genAI = new GoogleGenerativeAI(apiKey);
   const fileManager = new GoogleAIFileManager(apiKey);
 
-  return new Promise<any[]>((resolve, reject) => {
+  return new Promise<any[]>(async (resolve, reject) => {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
-    const audioStream = ytdl(url, { filter: "audioonly", quality: "highestaudio" });
+    const tempFilePath = path.join(CACHE_DIR, `${videoId}_temp.mp3`);
 
-    const tempFilePath = path.join(CACHE_DIR, `${videoId}_temp.webm`);
-    const writeStream = fs.createWriteStream(tempFilePath);
-    audioStream.pipe(writeStream);
+    try {
+      // Use youtube-dl-exec instead of ytdl-core to bypass format restrictions
+      const youtubedl = require('youtube-dl-exec');
+      await youtubedl(url, {
+        extractAudio: true,
+        audioFormat: 'mp3',
+        output: tempFilePath,
+        noWarnings: true,
+        noCheckCertificate: true,
+        preferFreeFormats: true,
+      });
 
-    audioStream.on("error", (err) => reject(new Error("ytdl-core error: " + err.message)));
-
-    writeStream.on("finish", async () => {
-      try {
-        const uploadResponse = await fileManager.uploadFile(tempFilePath, {
-          mimeType: "audio/webm",
-          displayName: `Audio ${videoId}`,
-        });
+      // File is downloaded successfully, now upload to Gemini
+      const uploadResponse = await fileManager.uploadFile(tempFilePath, {
+        mimeType: "audio/mp3",
+        displayName: `Audio ${videoId}`,
+      });
 
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const prompt = `You are a professional transcriptionist. Listen to the audio and provide a complete transcript. 
@@ -208,7 +212,6 @@ Example output:
         if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
         reject(err);
       }
-    });
   });
 }
 
