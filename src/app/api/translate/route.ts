@@ -84,7 +84,7 @@ ${query}`;
 }
 
 // Group items into batches where total text length stays under maxChars
-function groupIntoBatches(texts: string[], maxChars = 3000): number[][] {
+function groupIntoBatches(texts: string[], maxChars = 1000): number[][] {
   const batches: number[][] = [];
   let current: number[] = [];
   let currentLen = 0;

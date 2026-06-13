@@ -85,18 +85,16 @@ ${query}`;
         } else {
           // If mismatch, translate individually as a fallback
           console.warn(`Translation mismatch: expected ${texts.length}, got ${parts.length}. Falling back to individual translation.`);
-          const individualResults = [];
-          for (const text of texts) {
+          const individualPromises = texts.map(async (text) => {
             try {
-               const res = await model.generateContent(`Translate the following to fluent Traditional Chinese (Taiwan), return ONLY the translation:\n${text}`);
-               let singleText = res.response.text().trim();
-               singleText = singleText.replace(/^```.*?\n/m, '').replace(/```$/m, '').trim();
-               individualResults.push(singleText);
+              const res = await model.generateContent(`Translate the following to fluent Traditional Chinese (Taiwan), return ONLY the translation:\n${text}`);
+              let singleText = res.response.text().trim();
+              return singleText.replace(/^```.*?\n/m, '').replace(/```$/m, '').trim();
             } catch {
-               individualResults.push(null);
+              return null;
             }
-          }
-          return individualResults;
+          });
+          return Promise.all(individualPromises);
         }
       }
     } catch (err) {
@@ -124,7 +122,7 @@ ${query}`;
 }
 
 // Group items into batches
-function groupIntoBatches(items: { text: string }[], maxChars = 3000): number[][] {
+function groupIntoBatches(items: { text: string }[], maxChars = 1000): number[][] {
   const batches: number[][] = [];
   let current: number[] = [];
   let currentLen = 0;
